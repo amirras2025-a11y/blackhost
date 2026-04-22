@@ -1,8 +1,6 @@
 name: SOCKS5 Proxy
 
 on:
-  schedule:
-    - cron: '0 */10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,16 +9,23 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Install Gost
+      - name: Setup Dante SOCKS5
         run: |
-          wget -O gost.tar.gz https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-          gunzip gost.tar.gz
-          chmod +x gost-linux-amd64-2.11.5
-          sudo mv gost-linux-amd64-2.11.5 /usr/local/bin/gost
-
-      - name: Run SOCKS5 Server
-        run: gost -L=socks5://:8080
-
-      - name: Run SOCKS5 Server
-        shell: bash
-        run: chisel server --socks5 --port 8080 --reverse
+          sudo apt-get update
+          sudo apt-get install -y dante-server
+          sudo bash -c 'cat > /etc/danted.conf << EOF
+          logoutput: syslog
+          internal: 0.0.0.0 port = 1080
+          external: eth0
+          method: username none
+          client pass {
+              from: 0.0.0.0/0 to: 0.0.0.0/0
+          }
+          pass {
+              from: 0.0.0.0/0 to: 0.0.0.0/0
+              protocol: tcp udp
+          }
+          EOF'
+          sudo systemctl start danted
+          echo "SOCKS5 proxy running on port 1080"
+          sleep 6h
