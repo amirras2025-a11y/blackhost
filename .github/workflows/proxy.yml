@@ -11,15 +11,15 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Install Chisel
-        shell: bash
+      - name: Install Gost
         run: |
-          # دانلود با curl به جای wget
-          curl -L -o chisel.gz https://github.com/jpillora/chisel/releases/latest/download/chisel_1.9.1_linux_amd64.gz
-          gunzip chisel.gz
-          chmod +x chisel
-          sudo mv chisel /usr/local/bin/
-          chisel --version
+          wget -O gost.tar.gz https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+          gunzip gost.tar.gz
+          chmod +x gost-linux-amd64-2.11.5
+          sudo mv gost-linux-amd64-2.11.5 /usr/local/bin/gost
+
+      - name: Run SOCKS5 Server
+        run: gost -L=socks5://:8080
 
       - name: Run SOCKS5 Server
         shell: bash
