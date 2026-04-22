@@ -1,4 +1,4 @@
-name: SOCKS5 Proxy Python
+name: Cloudflare Tunnel Proxy
 
 on:
   workflow_dispatch:
@@ -9,31 +9,13 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Setup Python SOCKS5
+      - name: Setup Cloudflared
         run: |
-          pip install PySocks
-          python3 << EOF
-          import socket
-          import socks
-          import threading
+          wget -O cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
           
-          def handle_client(client_socket):
-              remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-              remote_socket.connect(('8.8.8.8', 53))
-              while True:
-                  data = client_socket.recv(4096)
-                  if not data:
-                      break
-                  remote_socket.send(data)
-                  client_socket.send(remote_socket.recv(4096))
-              client_socket.close()
+          # اجرای tunnel به عنوان SOCKS5
+          cloudflared tunnel --url socks5://localhost:8080
           
-          server = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-          server.bind(('0.0.0.0', 8080))
-          server.listen(5)
-          print("SOCKS5 proxy running on port 8080")
-          
-          while True:
-              client, addr = server.accept()
-              threading.Thread(target=handle_client, args=(client,)).start()
-          EOF
+          echo "SOCKS5 proxy available via Cloudflare"
+          sleep 6h
