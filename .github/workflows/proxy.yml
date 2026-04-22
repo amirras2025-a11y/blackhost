@@ -12,11 +12,15 @@ jobs:
     
     steps:
       - name: Install Chisel
+        shell: bash
         run: |
-          wget -O chisel.gz https://github.com/jpillora/chisel/releases/latest/download/chisel_1.9.1_linux_amd64.gz
+          # دانلود با curl به جای wget
+          curl -L -o chisel.gz https://github.com/jpillora/chisel/releases/latest/download/chisel_1.9.1_linux_amd64.gz
           gunzip chisel.gz
           chmod +x chisel
           sudo mv chisel /usr/local/bin/
+          chisel --version
 
       - name: Run SOCKS5 Server
+        shell: bash
         run: chisel server --socks5 --port 8080 --reverse
