@@ -1,6 +1,8 @@
 name: SOCKS5 Proxy
 
 on:
+  schedule:
+    - cron: '0 */10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -9,23 +11,8 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Setup Dante SOCKS5
+      - name: Setup SOCKS5 with Docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dante-server
-          sudo bash -c 'cat > /etc/danted.conf << EOF
-          logoutput: syslog
-          internal: 0.0.0.0 port = 1080
-          external: eth0
-          method: username none
-          client pass {
-              from: 0.0.0.0/0 to: 0.0.0.0/0
-          }
-          pass {
-              from: 0.0.0.0/0 to: 0.0.0.0/0
-              protocol: tcp udp
-          }
-          EOF'
-          sudo systemctl start danted
-          echo "SOCKS5 proxy running on port 1080"
+          docker run -d --name socks5 -p 8080:1080 serjs/socks5-server
+          echo "SOCKS5 proxy running on port 8080"
           sleep 6h
