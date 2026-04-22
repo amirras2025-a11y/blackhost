@@ -1,4 +1,4 @@
-name: SOCKS5 Proxy via SSH
+name: SOCKS5 Proxy Python
 
 on:
   workflow_dispatch:
@@ -9,18 +9,31 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Setup SSH SOCKS Tunnel
+      - name: Setup Python SOCKS5
         run: |
-          # نصب SSH (روی ubuntu-latest نصب هست)
-          sudo apt-get update
-          sudo apt-get install -y openssh-server
+          pip install PySocks
+          python3 << EOF
+          import socket
+          import socks
+          import threading
           
-          # ایجاد کاربر موقت
-          sudo useradd -m -s /bin/bash proxyuser
-          echo "proxyuser:pass123" | sudo chpasswd
+          def handle_client(client_socket):
+              remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              remote_socket.connect(('8.8.8.8', 53))
+              while True:
+                  data = client_socket.recv(4096)
+                  if not data:
+                      break
+                  remote_socket.send(data)
+                  client_socket.send(remote_socket.recv(4096))
+              client_socket.close()
           
-          # راه‌اندازی SSH dynamic forwarding
-          sudo ssh -D 0.0.0.0:8080 -N -f proxyuser@localhost
+          server = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+          server.bind(('0.0.0.0', 8080))
+          server.listen(5)
+          print("SOCKS5 proxy running on port 8080")
           
-          echo "SOCKS5 proxy running on port 8080"
-          sleep 6h
+          while True:
+              client, addr = server.accept()
+              threading.Thread(target=handle_client, args=(client,)).start()
+          EOF
