@@ -1,8 +1,6 @@
-name: SOCKS5 Proxy
+name: SOCKS5 Proxy via SSH
 
 on:
-  schedule:
-    - cron: '0 */10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,8 +9,18 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: Setup SOCKS5 with Docker
+      - name: Setup SSH SOCKS Tunnel
         run: |
-          docker run -d --name socks5 -p 8080:1080 serjs/socks5-server
+          # نصب SSH (روی ubuntu-latest نصب هست)
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          
+          # ایجاد کاربر موقت
+          sudo useradd -m -s /bin/bash proxyuser
+          echo "proxyuser:pass123" | sudo chpasswd
+          
+          # راه‌اندازی SSH dynamic forwarding
+          sudo ssh -D 0.0.0.0:8080 -N -f proxyuser@localhost
+          
           echo "SOCKS5 proxy running on port 8080"
           sleep 6h
