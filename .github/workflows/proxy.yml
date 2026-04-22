@@ -1,0 +1,22 @@
+name: SOCKS5 Proxy
+
+on:
+  schedule:
+    - cron: '0 */10 * * *'
+  workflow_dispatch:
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+      - name: Install Chisel
+        run: |
+          wget -O chisel.gz https://github.com/jpillora/chisel/releases/latest/download/chisel_1.9.1_linux_amd64.gz
+          gunzip chisel.gz
+          chmod +x chisel
+          sudo mv chisel /usr/local/bin/
+
+      - name: Run SOCKS5 Server
+        run: chisel server --socks5 --port 8080 --reverse
