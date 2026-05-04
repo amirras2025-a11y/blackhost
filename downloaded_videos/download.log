@@ -1,0 +1,21 @@
+[PornHub] Extracting URL: https://www.pornhub.com/view_video.php?viewkey=659876e67fcb5
+[PornHub] 659876e67fcb5: Downloading pc webpage
+[PornHub] 659876e67fcb5: Downloading m3u8 information
+[PornHub] 659876e67fcb5: Downloading m3u8 information
+[PornHub] 659876e67fcb5: Downloading m3u8 information
+[PornHub] 659876e67fcb5: Downloading m3u8 information
+[PornHub] 659876e67fcb5: Downloading JSON metadata
+WARNING: [PornHub] 659876e67fcb5: Failed to parse JSON: Expecting value in '': line 1 column 1 (char 0)
+WARNING: [PornHub] unable to extract model profile; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+[info] 659876e67fcb5: Downloading 1 format(s): hls-500
+[info] Downloading video thumbnail 0 ...
+[info] Writing video thumbnail 0 to: video.jpg
+[hlsnative] Downloading m3u8 manifest
+[hlsnative] Fragment downloads will be delegated to aria2c
+[hlsnative] Total fragments: 76
+[download] Destination: video.mp4
+[download] 100% of   20.72MiB in 00:00:00 at 72.09MiB/s
+[FixupM3u8] Fixing MPEG-TS in MP4 container of "video.mp4"
+[Metadata] Adding metadata to "video.mp4"
+[EmbedThumbnail] Neither mutagen nor AtomicParsley was found. Falling back to ffmpeg
+[EmbedThumbnail] ffmpeg: Adding thumbnail to "video.mp4"
