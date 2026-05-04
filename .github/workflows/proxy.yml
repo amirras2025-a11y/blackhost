@@ -1,292 +1,219 @@
-name: 🚀 VMess Anti-DPI Proxy (Fixed)
+name: 🎬 Video Downloader (Anti-403)
 
 on:
   workflow_dispatch:
     inputs:
-      duration:
-        description: '⏱️ مدت زمان (دقیقه، حداکثر ۳۴۵)'
+      video_url:
+        description: '🔗 لینک ویدیو'
         required: true
-        default: '300'
+        type: string
+      quality:
+        description: '📊 کیفیت'
+        required: true
+        default: 'best_video'
         type: choice
         options:
-          - '60'
-          - '120'
-          - '180'
-          - '240'
-          - '300'
-          - '345'
+          - 'best_video (بهترین)'
+          - '1080p'
+          - '720p'
+          - '480p'
+          - '360p'
+          - 'worst_video (کمترین)'
+      use_cookies:
+        description: '🍪 استفاده از کوکی (برای سایت‌های محافظت‌شده)'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'no (بدون کوکی)'
+          - 'yes (از کوکی مرورگر استفاده کن)'
+      browser_cookies:
+        description: '📋 محتوای فایل cookies.txt (فقط اگر گزینه بالا yes باشد)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
 
 jobs:
-  vmess-proxy:
+  download:
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    
+
     steps:
-      - name: 📥 Checkout مخزن
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🔓 فعال‌سازی دسترسی به پورت‌های پایین
+      - name: 📦 نصب yt-dlp و ffmpeg
         run: |
-          # راه‌حل ۱: اجازه binding به binary خاص
-          sudo setcap 'cap_net_bind_service=+ep' /tmp/xray_temp/xray 2>/dev/null || true
-          
-          # راه‌حل ۲: کاهش محدودیت پورت (اگه راه‌حل ۱ جواب نداد)
-          echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee /etc/sysctl.d/99-ports.conf
-          sudo sysctl -p /etc/sysctl.d/99-ports.conf
+          echo "📥 نصب ابزارها..."
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          echo "✅ نصب کامل شد"
 
-      - name: 📦 دانلود و نصب Xray
+      - name: 🍪 تنظیم کوکی (در صورت نیاز)
+        if: github.event.inputs.use_cookies == 'yes (از کوکی مرورگر استفاده کن)'
         run: |
-          cd /tmp
-          
-          # دانلود
-          wget -q --timeout=30 \
-            "https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip" \
-            -O xray.zip || \
-          curl -L -o xray.zip \
-            "https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip"
-          
-          if [ ! -f xray.zip ]; then
-            echo "❌ دانلود ناموفق"
-            exit 1
-          fi
-          
-          unzip -o xray.zip -d xray_temp
-          chmod +x xray_temp/xray
-          
-          # حالا setcap رو اجرا کن
-          sudo setcap 'cap_net_bind_service=+ep' xray_temp/xray
-          
-          echo "✅ Xray نصب و آماده شد"
-
-      - name: 🔑 ساخت کانفیگ VMess
-        run: |
-          UUID=$(cat /proc/sys/kernel/random/uuid)
-          echo "UUID=$UUID" >> $GITHUB_ENV
-          
-          mkdir -p /tmp/xray_config
-          cat > /tmp/xray_config/config.json << 'ENDOFCONFIG'
-          {
-            "log": {
-              "loglevel": "warning"
-            },
-            "inbounds": [
-              {
-                "port": 443,
-                "protocol": "vmess",
-                "settings": {
-                  "clients": [
-                    {
-                      "id": "PLACEHOLDER_UUID",
-                      "alterId": 0,
-                      "security": "auto"
-                    }
-                  ]
-                },
-                "streamSettings": {
-                  "network": "ws",
-                  "wsSettings": {
-                    "path": "/ws",
-                    "headers": {
-                      "Host": "github.com"
-                    }
-                  }
-                }
-              }
-            ],
-            "outbounds": [
-              {
-                "protocol": "freedom",
-                "settings": {}
-              }
-            ]
-          }
-          ENDOFCONFIG
-          
-          sed -i "s/PLACEHOLDER_UUID/${UUID}/g" /tmp/xray_config/config.json
-          echo "✅ کانفیگ ساخته شد"
-
-      - name: 🚀 راه‌اندازی Xray روی پورت ۴۴۳
-        run: |
-          cd /tmp/xray_temp
-          
-          # روش ۱: اجرا با sudo در پس‌زمینه
-          sudo nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
-          XRAY_PID=$!
-          
-          sleep 5
-          
-          if kill -0 $XRAY_PID 2>/dev/null; then
-            echo "✅ Xray با sudo اجرا شد (PID: $XRAY_PID)"
+          if [ -n "${{ github.event.inputs.browser_cookies }}" ]; then
+            echo "${{ github.event.inputs.browser_cookies }}" > /tmp/cookies.txt
+            echo "✅ فایل کوکی ساخته شد"
+            echo "COOKIE_FILE=/tmp/cookies.txt" >> $GITHUB_ENV
           else
-            echo "⚠️ روش اول ناموفق - تلاش با setcap..."
-            
-            # روش ۲: با setcap قبلی
-            nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
-            XRAY_PID=$!
-            sleep 5
-            
-            if kill -0 $XRAY_PID 2>/dev/null; then
-              echo "✅ Xray با setcap اجرا شد (PID: $XRAY_PID)"
-            else
-              echo "❌ هر دو روش ناموفق"
-              cat /tmp/xray.log
-              exit 1
-            fi
+            echo "⚠️ گزینه کوکی فعال است اما محتوایی وارد نشده!"
+            echo "COOKIE_FILE=" >> $GITHUB_ENV
+          fi
+
+      - name: 🎯 تنظیم فرمت
+        run: |
+          case "${{ github.event.inputs.quality }}" in
+            "best_video (بهترین)") FORMAT="bv*+ba/best" ;;
+            "1080p") FORMAT="bv*[height<=1080]+ba/best[height<=1080]" ;;
+            "720p") FORMAT="bv*[height<=720]+ba/best[height<=720]" ;;
+            "480p") FORMAT="bv*[height<=480]+ba/best[height<=480]" ;;
+            "360p") FORMAT="bv*[height<=360]+ba/best[height<=360]" ;;
+            *) FORMAT="worstvideo+worstaudio/worst" ;;
+          esac
+          echo "FORMAT=$FORMAT" >> $GITHUB_ENV
+          echo "✅ فرمت: $FORMAT"
+
+      - name: 📥 دانلود با yt-dlp (روش اول - کامل)
+        id: download_main
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/videos
+          
+          # آرگومان‌های اضافی برای کوکی
+          COOKIE_ARG=""
+          if [ -n "$COOKIE_FILE" ] && [ -f "$COOKIE_FILE" ]; then
+            COOKIE_ARG="--cookies $COOKIE_FILE"
           fi
           
-          # بررسی پورت
-          sleep 2
-          sudo ss -tlnp | grep 443 || sudo netstat -tlnp | grep 443 || echo "⚠️ پورت پیدا نشد ولی Xray در حال اجراست"
+          yt-dlp \
+            --format "$FORMAT" \
+            --output "/tmp/videos/%(title)s.%(ext)s" \
+            --merge-output-format mp4 \
+            --no-playlist \
+            --socket-timeout 60 \
+            --retries 15 \
+            --fragment-retries 15 \
+            --no-check-certificates \
+            --force-ipv4 \
+            --geo-bypass \
+            --no-cache-dir \
+            --rm-cache-dir \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            --extractor-args "youtube:player_client=web,ios" \
+            --extractor-retries 10 \
+            $COOKIE_ARG \
+            "${{ github.event.inputs.video_url }}"
 
-      - name: 🌐 دریافت آی‌پی
+      - name: 📥 دانلود با yt-dlp (روش دوم - با cookies از فایل)
+        id: download_fallback2
+        if: steps.download_main.outcome == 'failure'
+        continue-on-error: true
         run: |
-          IP=""
-          for service in "ifconfig.me" "ipinfo.io/ip" "icanhazip.com" "api.ipify.org"; do
-            IP=$(curl -s --max-time 5 "$service" 2>/dev/null)
-            if [ -n "$IP" ] && [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              break
-            fi
-          done
+          echo "⚠️ روش اول ناموفق - تلاش با تنظیمات جایگزین..."
           
-          if [ -z "$IP" ]; then
-            echo "❌ خطا در دریافت آی‌پی"
+          yt-dlp \
+            --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+            --output "/tmp/videos/%(title)s.%(ext)s" \
+            --merge-output-format mp4 \
+            --no-playlist \
+            --socket-timeout 60 \
+            --retries 15 \
+            --fragment-retries 15 \
+            --no-check-certificates \
+            --force-ipv4 \
+            --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            --referer "https://www.google.com/" \
+            --add-header "Accept-Language:en-US,en;q=0.9" \
+            --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+            "${{ github.event.inputs.video_url }}"
+
+      - name: 📥 دانلود با yt-dlp (روش سوم - استخراج مستقیم)
+        id: download_fallback3
+        if: steps.download_fallback2.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "⚠️ روش دوم ناموفق - تلاش با استخراج مستقیم لینک..."
+          
+          yt-dlp \
+            --format "worst[ext=mp4]/worst" \
+            --output "/tmp/videos/%(title)s.%(ext)s" \
+            --no-playlist \
+            --socket-timeout 60 \
+            --retries 20 \
+            --no-check-certificates \
+            --force-ipv4 \
+            --geo-bypass \
+            --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" \
+            --extractor-args "youtube:player_client=ios" \
+            "${{ github.event.inputs.video_url }}"
+
+      - name: 📥 دانلود با curl مستقیم (روش چهارم - آخرین شانس)
+        id: download_curl
+        if: steps.download_fallback3.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "⚠️ تمام روش‌های yt-dlp ناموفق - تلاش با curl مستقیم..."
+          
+          # استخراج لینک مستقیم
+          DIRECT_URL=$(yt-dlp --get-url --format "best[ext=mp4]/best" --no-playlist "${{ github.event.inputs.video_url }}" 2>/dev/null | head -1)
+          
+          if [ -n "$DIRECT_URL" ]; then
+            echo "🔗 لینک مستقیم پیدا شد"
+            curl -L -o "/tmp/videos/downloaded_video.mp4" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "Accept: */*" \
+              -H "Accept-Language: en-US,en;q=0.5" \
+              --retry 10 \
+              --max-time 600 \
+              "$DIRECT_URL"
+            echo "✅ دانلود با curl انجام شد"
+          else
+            echo "❌ لینک مستقیم پیدا نشد"
+            exit 1
+          fi
+
+      - name: 🔍 پیدا کردن فایل دانلود شده
+        id: find_file
+        run: |
+          echo "📂 تمام فایل‌های /tmp/videos/:"
+          ls -lhR /tmp/videos/
+          
+          # پیدا کردن فایل
+          VIDEO_FILE=$(find /tmp/videos -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.flv" \) -printf "%s %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+          
+          if [ -z "$VIDEO_FILE" ]; then
+            echo "❌ فایل پیدا نشد!"
             exit 1
           fi
           
-          echo "IP=$IP" >> $GITHUB_ENV
-          echo "✅ آی‌پی: $IP"
+          FILE_SIZE=$(du -h "$VIDEO_FILE" | cut -f1)
+          FILE_NAME=$(basename "$VIDEO_FILE")
+          
+          echo "VIDEO_PATH=$VIDEO_FILE" >> $GITHUB_ENV
+          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          
+          echo "✅ فایل: $FILE_NAME ($FILE_SIZE)"
 
-      - name: 🔗 ساخت لینک VMess
+      - name: 📤 آپلود به Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE_NAME }}
+          path: ${{ env.VIDEO_PATH }}
+          retention-days: 7
+          compression-level: 0
+
+      - name: 📊 نتیجه نهایی
         run: |
-          CLIENT_CONFIG=$(cat << ENDJSON
-          {
-            "v": "2",
-            "ps": "GitHub-Proxy-443",
-            "add": "${IP}",
-            "port": "443",
-            "id": "${UUID}",
-            "aid": "0",
-            "scy": "auto",
-            "net": "ws",
-            "type": "none",
-            "host": "github.com",
-            "path": "/ws",
-            "tls": "",
-            "sni": "",
-            "alpn": ""
-          }
-          ENDJSON
-          )
-          
-          VMESS_LINK="vmess://$(echo -n "$CLIENT_CONFIG" | base64 -w 0)"
-          echo "VMESS_LINK=$VMESS_LINK" >> $GITHUB_ENV
-          
-          START_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
-          END_TIME=$(date -u -d "+${{ github.event.inputs.duration }} minutes" '+%Y-%m-%d %H:%M:%S')
-          echo "START_TIME=$START_TIME" >> $GITHUB_ENV
-          echo "END_TIME=$END_TIME" >> $GITHUB_ENV
-          
-          echo "✅ لینک VMess ساخته شد"
-
-      - name: 📝 ساخت و آپلود فایل‌ها
-        run: |
-          mkdir -p configs
-          
-          # لینک خالص
-          echo "${VMESS_LINK}" > VLESS_LINK.txt
-          
-          # فایل اطلاعات
-          cat > CONNECTION_INFO.md << ENDMD
-          # 🟢 پروکسی VMess روی پورت ۴۴۳
-
-          **وضعیت:** 🟢 آنلاین  
-          **اعتبار:** تا ${END_TIME} UTC
-
-          ## 🔗 لینک مستقیم (در Happ پیست کنید)
-          \`\`\`
-          ${VMESS_LINK}
-          \`\`\`
-
-          ## ⚙️ تنظیمات دستی
-          | پارامتر | مقدار |
-          |---------|-------|
-          | پروتکل | VMess |
-          | آدرس | \`${IP}\` |
-          | پورت | \`443\` |
-          | UUID | \`${UUID}\` |
-          | Alter ID | \`0\` |
-          | Security | \`auto\` |
-          | Network | \`ws\` |
-          | Path | \`/ws\` |
-          | Host | \`github.com\` |
-
-          ## ⏱️ زمان‌بندی
-          - شروع: ${START_TIME} UTC
-          - پایان: ${END_TIME} UTC
-          - مدت: ${{ github.event.inputs.duration }} دقیقه
-
-          ---
-          ⚠️ این پروکسی موقت است. پس از پایان غیرفعال می‌شود.
-          ENDMD
-          
-          # کانفیگ JSON
-          echo "$CLIENT_CONFIG" | python3 -m json.tool > configs/vmess_config.json 2>/dev/null || echo "$CLIENT_CONFIG" > configs/vmess_config.json
-          
-          # آپلود
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
-          git add -A
-          git commit -m "🟢 پروکسی VMess فعال روی پورت 443" || echo "بدون تغییر"
-          
-          for i in 1 2 3; do
-            if git push origin HEAD:${{ github.ref }} 2>/dev/null; then
-              echo "✅ آپلود موفق"
-              break
-            else
-              git pull --rebase origin ${{ github.ref }} 2>/dev/null || true
-              sleep 3
-            fi
-          done
-          
           echo ""
-          echo "════════════════════════════════════════════════"
-          echo "  🎉 پروکسی VMess آماده!"
-          echo ""
-          echo "  📋 لینک مستقیم:"
-          echo "  ${VMESS_LINK}"
-          echo ""
-          echo "  ⏱️  اعتبار: ${END_TIME} UTC"
-          echo "════════════════════════════════════════════════"
-
-      - name: ⏳ زنده نگه داشتن سرور
-        run: |
-          DURATION=${{ github.event.inputs.duration }}
-          
-          echo "⏳ سرور برای ${DURATION} دقیقه فعال می‌ماند..."
-          
-          for ((i=1; i<=DURATION; i++)); do
-            sleep 60
-            REMAIN=$((DURATION - i))
-            
-            if [ $((i % 5)) -eq 0 ]; then
-              # بررسی سلامت
-              if pgrep -f "xray run" > /dev/null; then
-                echo "✅ [$i/${DURATION}] فعال - ${REMAIN} دقیقه باقی‌مانده"
-              else
-                echo "⚠️ [$i/${DURATION}] Xray خاموش - راه‌اندازی مجدد..."
-                cd /tmp/xray_temp
-                sudo nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
-                sleep 3
-                pgrep -f "xray run" > /dev/null && echo "✅ راه‌اندازی مجدد موفق" || echo "❌ راه‌اندازی مجدد ناموفق"
-              fi
-            fi
-          done
-          
-          echo ""
-          echo "⏹️ پایان زمان. سرور خاموش شد."
+          echo "╔════════════════════════════════════════════════╗"
+          echo "║              🎉 دانلود کامل شد                 ║"
+          echo "╠════════════════════════════════════════════════╣"
+          echo "║  📹 فایل: ${FILE_NAME}"
+          echo "║  📦 حجم:  ${FILE_SIZE}"
+          echo "║                                                ║"
+          echo "║  📥 دریافت: تب Actions > همین اجرا            ║"
+          echo "║     > پایین صفحه > بخش Artifacts               ║"
+          echo "╚════════════════════════════════════════════════╝"
