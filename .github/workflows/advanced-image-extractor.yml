@@ -1,0 +1,62 @@
+name: Advanced Image Extractor (Playwright)
+
+on:
+  workflow_dispatch:
+    inputs:
+      page_url:
+        description: 'Website URL to extract images from'
+        required: true
+        type: string
+        default: 'https://example.com'
+      wait_time:
+        description: 'Wait time for page load (seconds)'
+        required: false
+        type: number
+        default: 3
+      scroll:
+        description: 'Auto scroll to load lazy images (true/false)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  extract-images:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install Playwright
+      run: |
+        npm init -y
+        npm install playwright
+        npx playwright install chromium
+    
+    - name: Create output directory
+      run: mkdir -p output
+    
+    - name: Extract images with Playwright
+      env:
+        PAGE_URL: ${{ github.event.inputs.page_url }}
+        WAIT_TIME: ${{ github.event.inputs.wait_time }}
+        ENABLE_SCROLL: ${{ github.event.inputs.scroll }}
+      run: node scripts/extract-images-advanced.js
+    
+    - name: Commit and push results
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Extracted images from ${{ github.event.inputs.page_url }}"
+        commit_user_name: "github-actions[bot]"
+        commit_user_email: "github-actions[bot]@users.noreply.github.com"
+        file_pattern: "output/*"
