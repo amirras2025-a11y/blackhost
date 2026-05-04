@@ -22,20 +22,43 @@ jobs:
     timeout-minutes: 360
     
     steps:
-      - name: نصب Xray Core
+      - name: دانلود و نصب مستقیم Xray
         run: |
-          # دانلود و نصب Xray
-          bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+          # ایجاد دایرکتوری‌های مورد نیاز
+          sudo mkdir -p /usr/local/etc/xray
+          sudo mkdir -p /var/log/xray
           
+          # دانلود مستقیم آخرین نسخه Xray از GitHub
+          echo "📥 در حال دانلود Xray..."
+          curl -L -o /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          
+          # استخراج فایل‌ها
+          echo "📦 در حال استخراج..."
+          sudo unzip -o /tmp/xray.zip -d /usr/local/bin/
+          
+          # تنظیم مجوز اجرا
+          sudo chmod +x /usr/local/bin/xray
+          
+          # بررسی نصب موفق
+          /usr/local/bin/xray version
+          
+          echo "✅ Xray با موفقیت نصب شد"
+
+      - name: ساخت UUID و تنظیمات
+        run: |
           # تولید UUID تصادفی
           UUID=$(cat /proc/sys/kernel/random/uuid)
           echo "UUID=$UUID" >> $GITHUB_ENV
-          
-          # ساخت فایل کانفیگ Xray
-          sudo bash -c "cat > /usr/local/etc/xray/config.json << 'EOF'
+          echo "UUID تولید شد: $UUID"
+
+      - name: ایجاد فایل کانفیگ Xray
+        run: |
+          sudo bash -c "cat > /usr/local/etc/xray/config.json << 'EOCONFIG'
           {
             \"log\": {
-              \"loglevel\": \"warning\"
+              \"loglevel\": \"warning\",
+              \"access\": \"/var/log/xray/access.log\",
+              \"error\": \"/var/log/xray/error.log\"
             },
             \"inbounds\": [
               {
@@ -44,9 +67,9 @@ jobs:
                 \"settings\": {
                   \"clients\": [
                     {
-                      \"id\": \"$UUID\",
+                      \"id\": \"${UUID}\",
                       \"level\": 0,
-                      \"email\": \"github-user\"
+                      \"email\": \"github-user@proxy.local\"
                     }
                   ],
                   \"decryption\": \"none\"
@@ -55,77 +78,149 @@ jobs:
                   \"network\": \"ws\",
                   \"security\": \"none\",
                   \"wsSettings\": {
-                    \"path\": \"/proxy\"
+                    \"path\": \"/proxy\",
+                    \"headers\": {
+                      \"Host\": \"github.com\"
+                    }
                   }
+                },
+                \"sniffing\": {
+                  \"enabled\": true,
+                  \"destOverride\": [\"http\", \"tls\"]
                 }
               }
             ],
             \"outbounds\": [
               {
                 \"protocol\": \"freedom\",
-                \"settings\": {}
+                \"settings\": {},
+                \"tag\": \"direct\"
               }
             ]
           }
-          EOF"
+          EOCONFIG"
+          
+          echo "✅ فایل کانفیگ ساخته شد"
 
-          # راه‌اندازی Xray
-          sudo systemctl restart xray
+      - name: ایجاد سرویس systemd برای Xray
+        run: |
+          sudo bash -c 'cat > /etc/systemd/system/xray.service << EOF
+          [Unit]
+          Description=Xray Service
+          After=network.target nss-lookup.target
+          
+          [Service]
+          Type=simple
+          User=root
+          ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+          Restart=on-failure
+          RestartPreventExitStatus=23
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF'
+          
+          # بارگذاری مجدد سرویس‌ها
+          sudo systemctl daemon-reload
+          
+          # فعال‌سازی و شروع سرویس
           sudo systemctl enable xray
-          echo "✅ Xray با پروتکل VLESS روی پورت 443 راه‌اندازی شد"
+          sudo systemctl start xray
+          
+          # بررسی وضعیت
+          sleep 2
+          sudo systemctl status xray --no-pager
+          
+          echo "✅ سرویس Xray راه‌اندازی شد"
 
-      - name: دریافت آی‌پی و ساخت لینک
+      - name: دریافت آی‌پی و ساخت لینک اتصال
         id: get-ip
         run: |
-          IP=$(curl -s ifconfig.me)
-          UUID=$(echo $UUID)
+          # دریافت آی‌پی عمومی
+          IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip || curl -s icanhazip.com)
           
-          # ساخت لینک VLESS
-          VLESS_LINK="vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy"
-          
-          # رمزنگاری Base64 برای Happ
-          VLESS_BASE64=$(echo -n "vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy" | base64 -w 0)
+          if [ -z "$IP" ]; then
+            echo "❌ خطا در دریافت آی‌پی عمومی"
+            exit 1
+          fi
           
           echo "IP=$IP" >> $GITHUB_ENV
-          echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_ENV
-          echo "VLESS_BASE64=$VLESS_BASE64" >> $GITHUB_ENV
+          
+          # ساخت لینک VLESS
+          VLESS_LINK="vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy&host=github.com#GitHub-Proxy"
           
           echo ""
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║     🎉 سرور VLESS آماده استفاده است          ║"
-          echo "╠══════════════════════════════════════════════╣"
-          echo "║                                              ║"
-          echo "║  📋 لینک اتصال (در Happ پیست کنید):          ║"
-          echo "║                                              ║"
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║                                                              ║"
+          echo "║               🎉 سرور VLESS آماده استفاده است                ║"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  📋 لینک اتصال مستقیم (کپی کنید):                           ║"
+          echo "║                                                              ║"
           echo "║  ${VLESS_LINK}"
-          echo "║                                              ║"
-          echo "║  ────────────────────────────────────        ║"
-          echo "║                                              ║"
-          echo "║  📱 تنظیمات دستی برای Happ:                  ║"
-          echo "║     • پروتکل: VLESS                          ║"
-          echo "║     • آدرس: ${IP}                      ║"
-          echo "║     • پورت: 443                               ║"
-          echo "║     • UUID: ${UUID}         ║"
-          echo "║     • Encryption: none                        ║"
-          echo "║     • Network: ws                             ║"
-          echo "║     • Path: /proxy                            ║"
-          echo "║                                              ║"
-          echo "║  ⏱️  اعتبار: ${{ github.event.inputs.duration }} دقیقه از الان    ║"
-          echo "║                                              ║"
-          echo "╚══════════════════════════════════════════════╝"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  📱 تنظیمات دستی برای Happ:                                 ║"
+          echo "║                                                              ║"
+          echo "║  • پروتکل:      VLESS                                       ║"
+          echo "║  • آدرس:        ${IP}                         ║"
+          echo "║  • پورت:        443                                         ║"
+          echo "║  • UUID:        ${UUID}  ║"
+          echo "║  • Encryption:  none                                         ║"
+          echo "║  • Network:     ws                                           ║"
+          echo "║  • Security:    none                                         ║"
+          echo "║  • Path:        /proxy                                       ║"
+          echo "║  • Host:        github.com                                   ║"
+          echo "║                                                              ║"
+          echo "║  ⏱️  زمان شروع:  $(date '+%Y-%m-%d %H:%M:%S' -u) UTC           ║"
+          echo "║  ⏱️  اعتبار:     ${{ github.event.inputs.duration }} دقیقه                              ║"
+          echo "║                                                              ║"
+          echo "║  💡 نکته: لینک VLESS را در Happ پیست کنید                   ║"
+          echo "║     یا از تنظیمات دستی استفاده کنید                         ║"
+          echo "║                                                              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
+
+      - name: تست سرور
+        run: |
+          echo "🔍 در حال تست اتصال سرور..."
+          
+          # تست پورت
+          if sudo netstat -tlnp | grep -q ":443"; then
+            echo "✅ پورت 443 باز است و Xray در حال گوش دادن است"
+          else
+            echo "⚠️ پورت 443 پیدا نشد. در حال بررسی..."
+            sudo netstat -tlnp
+          fi
+          
+          # تست لوکال
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:443 2>/dev/null || echo "000")
+          echo "📊 تست اتصال محلی: کد وضعیت $RESPONSE"
 
       - name: زنده نگه داشتن سرور
         run: |
           DURATION=${{ github.event.inputs.duration }}
+          echo ""
           echo "⏳ سرور برای ${DURATION} دقیقه فعال می‌ماند..."
+          echo "🕐 زمان پایان: $(date -d "+${DURATION} minutes" '+%Y-%m-%d %H:%M:%S' -u) UTC"
+          echo ""
           
           for ((i=1; i<=DURATION; i++)); do
             sleep 60
             REMAIN=$((DURATION - i))
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "✅ [$i/${DURATION} دقیقه] سرور فعال است - (${REMAIN} دقیقه باقی‌مانده)"
+            
+            # هر ۵ دقیقه وضعیت رو بررسی کن
+            if [ $((i % 5)) -eq 0 ]; then
+              if sudo systemctl is-active --quiet xray; then
+                echo "✅ [$i/${DURATION} دقیقه] Xray فعال است - (${REMAIN} دقیقه باقی‌مانده)"
+              else
+                echo "❌ [$i/${DURATION} دقیقه] Xray از کار افتاد! در حال راه‌اندازی مجدد..."
+                sudo systemctl restart xray
+              fi
             fi
           done
           
+          echo ""
           echo "⏹️ زمان پایان رسید. سرور خاموش می‌شود."
