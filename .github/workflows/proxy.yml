@@ -1,0 +1,131 @@
+name: 🚀 VLESS Xray Proxy Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'مدت زمان اجرا (دقیقه، حداکثر ۳۵۰)'
+        required: true
+        default: '300'
+        type: choice
+        options:
+          - '60'
+          - '120'
+          - '180'
+          - '240'
+          - '300'
+          - '350'
+
+jobs:
+  build-vless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+      - name: نصب Xray Core
+        run: |
+          # دانلود و نصب Xray
+          bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+          
+          # تولید UUID تصادفی
+          UUID=$(cat /proc/sys/kernel/random/uuid)
+          echo "UUID=$UUID" >> $GITHUB_ENV
+          
+          # ساخت فایل کانفیگ Xray
+          sudo bash -c "cat > /usr/local/etc/xray/config.json << 'EOF'
+          {
+            \"log\": {
+              \"loglevel\": \"warning\"
+            },
+            \"inbounds\": [
+              {
+                \"port\": 443,
+                \"protocol\": \"vless\",
+                \"settings\": {
+                  \"clients\": [
+                    {
+                      \"id\": \"$UUID\",
+                      \"level\": 0,
+                      \"email\": \"github-user\"
+                    }
+                  ],
+                  \"decryption\": \"none\"
+                },
+                \"streamSettings\": {
+                  \"network\": \"ws\",
+                  \"security\": \"none\",
+                  \"wsSettings\": {
+                    \"path\": \"/proxy\"
+                  }
+                }
+              }
+            ],
+            \"outbounds\": [
+              {
+                \"protocol\": \"freedom\",
+                \"settings\": {}
+              }
+            ]
+          }
+          EOF"
+
+          # راه‌اندازی Xray
+          sudo systemctl restart xray
+          sudo systemctl enable xray
+          echo "✅ Xray با پروتکل VLESS روی پورت 443 راه‌اندازی شد"
+
+      - name: دریافت آی‌پی و ساخت لینک
+        id: get-ip
+        run: |
+          IP=$(curl -s ifconfig.me)
+          UUID=$(echo $UUID)
+          
+          # ساخت لینک VLESS
+          VLESS_LINK="vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy"
+          
+          # رمزنگاری Base64 برای Happ
+          VLESS_BASE64=$(echo -n "vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy" | base64 -w 0)
+          
+          echo "IP=$IP" >> $GITHUB_ENV
+          echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_ENV
+          echo "VLESS_BASE64=$VLESS_BASE64" >> $GITHUB_ENV
+          
+          echo ""
+          echo "╔══════════════════════════════════════════════╗"
+          echo "║     🎉 سرور VLESS آماده استفاده است          ║"
+          echo "╠══════════════════════════════════════════════╣"
+          echo "║                                              ║"
+          echo "║  📋 لینک اتصال (در Happ پیست کنید):          ║"
+          echo "║                                              ║"
+          echo "║  ${VLESS_LINK}"
+          echo "║                                              ║"
+          echo "║  ────────────────────────────────────        ║"
+          echo "║                                              ║"
+          echo "║  📱 تنظیمات دستی برای Happ:                  ║"
+          echo "║     • پروتکل: VLESS                          ║"
+          echo "║     • آدرس: ${IP}                      ║"
+          echo "║     • پورت: 443                               ║"
+          echo "║     • UUID: ${UUID}         ║"
+          echo "║     • Encryption: none                        ║"
+          echo "║     • Network: ws                             ║"
+          echo "║     • Path: /proxy                            ║"
+          echo "║                                              ║"
+          echo "║  ⏱️  اعتبار: ${{ github.event.inputs.duration }} دقیقه از الان    ║"
+          echo "║                                              ║"
+          echo "╚══════════════════════════════════════════════╝"
+          echo ""
+
+      - name: زنده نگه داشتن سرور
+        run: |
+          DURATION=${{ github.event.inputs.duration }}
+          echo "⏳ سرور برای ${DURATION} دقیقه فعال می‌ماند..."
+          
+          for ((i=1; i<=DURATION; i++)); do
+            sleep 60
+            REMAIN=$((DURATION - i))
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "✅ [$i/${DURATION} دقیقه] سرور فعال است - (${REMAIN} دقیقه باقی‌مانده)"
+            fi
+          done
+          
+          echo "⏹️ زمان پایان رسید. سرور خاموش می‌شود."
