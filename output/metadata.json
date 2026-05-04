@@ -1,13 +1,132 @@
 {
-  "sourceUrl": "http://xnxx.com/",
-  "totalFound": 1,
-  "downloaded": 1,
+  "sourceUrl": "https://xnxx.com/",
+  "totalFound": 162,
+  "extracted": 20,
   "failed": 0,
-  "timestamp": "2026-05-04T10:24:40.570Z",
+  "timestamp": "2026-05-04T10:43:44.882Z",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "waitTime": 5,
+  "autoScroll": true,
   "images": [
     {
-      "filename": "img_1.png",
-      "originalUrl": "https://assets-cdn77.xnxx-cdn.com/v3/img/skins/xnxx/logo-xnxx.png"
+      "url": "https://assets-cdn77.xnxx-cdn.com/v3/img/skins/xnxx/logo-xnxx.png",
+      "type": "img",
+      "alt": "XNXX.COM",
+      "associatedLink": "https://www.xnxx.com/"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/6f807e3f-57bc-4349-9fea-461e1602c06d/0/xn_10_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/todays-selection"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/95fbfbf6-619c-44e7-8281-897eca47732b/0/xn_7_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/familial_relations?id=33657223"
+    },
+    {
+      "url": "https://thumbs-gcore.xnxx-cdn.com/04f7ecf0-dbdd-436c-983b-3e9b19307199/0/xn_24_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/hardcore?top&id=84342901"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/9c21eb70-a7fb-46cc-9b9f-212e51b6cc62/0/xn_17_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/doggystyle?top&id=82753015"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/78400e36-3543-4d47-a3ac-861e1e5f121b/3/xn_30_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/milf?id=89374438"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/eebf7ada-38b2-43a6-9e5e-67fb4ac19249/0/xn_4_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/teen?id=50511433"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/a59a23c3-0fa1-4895-a028-15734a9b3df9/0/xn_18_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/big+dick?top&id=87253377"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/35c324a1-ed5c-4e7f-97f3-811ef3f60df0/0/xn_27_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/black_woman?id=85436891"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/c13eff35-af74-4c27-a40b-1785508f5ce7/3/xn_26_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/wife?top&id=88892356"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/ab263b68-4cae-4c61-9e8b-0ad3336a60ec/3/xn_28_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/latina?id=89042866"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/3eb4f2f5-945c-4d71-b506-9ba2176ecf73/3/xn_19_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/missionary?top&id=89345746"
+    },
+    {
+      "url": "https://thumbs-gcore.xnxx-cdn.com/aab905c9-87a2-49ad-b76d-93b1e9109ae3/0/xn_12_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/mature?id=83821087"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/2e8f6d86-305d-4319-a97a-9dad3186df49/3/xn_3_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/orgasm?top&id=88992067"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/af1b880e-a358-4807-8147-884af862b505/3/xn_21_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/masturbation?top&id=89492530"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/96c8a3f8-416a-4de8-b4aa-974e93a21f57/0/xn_30_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/toons?id=85728675"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/e64434d3-83ff-4812-9d9e-37ac8c681338/0/xn_30_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/big_ass?id=86406207"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/0e0145c9-ac87-4d3d-af26-246c79b2719d/3/xn_29_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/stepdaughter?top&id=88149069"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/7fde9385-275d-44d8-85fe-af3b8dd19e2e/0/xn_29_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/deepthroat?top&id=63375735"
+    },
+    {
+      "url": "https://thumb-cdn77.xnxx-cdn.com/fe6408fc-ce6b-4001-b82f-eb6ee2deab3d/3/xn_20_t.jpg",
+      "type": "img",
+      "alt": "",
+      "associatedLink": "https://www.xnxx.com/search/lesbian?id=88145915"
     }
   ]
 }
