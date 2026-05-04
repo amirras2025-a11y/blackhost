@@ -1,4 +1,4 @@
-name: 🚀 VLESS Xray Proxy Builder
+name: 🚀 VLESS Xray Proxy Builder v2
 
 on:
   workflow_dispatch:
@@ -29,276 +29,261 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+
+      - name: 🔍 بررسی وضعیت پورت‌ها
+        run: |
+          echo "========== پورت‌های در حال استفاده =========="
+          sudo netstat -tlnp || ss -tlnp
+          echo ""
+          echo "========== فضای دیسک =========="
+          df -h /tmp
+          echo ""
+          echo "========== معماری سیستم =========="
+          uname -m
 
       - name: 📦 دانلود و نصب Xray
         run: |
-          echo "📥 در حال دانلود Xray..."
-          sudo mkdir -p /usr/local/etc/xray /var/log/xray
+          echo "دانلود Xray..."
+          cd /tmp
           
-          curl -L --retry 5 --retry-delay 10 -o /tmp/xray.zip \
-            https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip || \
-          curl -L --retry 5 --retry-delay 10 -o /tmp/xray.zip \
-            https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          # دانلود نسخه پایدار
+          wget -q --show-progress --timeout=30 \
+            "https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip" \
+            -O xray.zip || \
+          wget -q --show-progress --timeout=30 \
+            "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" \
+            -O xray.zip
           
-          sudo unzip -o /tmp/xray.zip -d /usr/local/bin/ 2>/dev/null || sudo apt-get install -y unzip && sudo unzip -o /tmp/xray.zip -d /usr/local/bin/
-          sudo chmod +x /usr/local/bin/xray
+          if [ ! -f xray.zip ]; then
+            echo "❌ دانلود ناموفق"
+            exit 1
+          fi
           
-          echo "✅ Xray نصب شد"
-          /usr/local/bin/xray version 2>/dev/null || echo "⚠️ ولی نسخه نمایش داده نشد"
+          echo "استخراج فایل‌ها..."
+          unzip -o xray.zip -d xray_temp
+          chmod +x xray_temp/xray
+          
+          # تست اجرا
+          ./xray_temp/xray version
+          echo "✅ Xray آماده است"
 
-      - name: 🔑 تولید UUID
-        id: keys
+      - name: 🔑 تولید UUID و ساخت کانفیگ
         run: |
           UUID=$(cat /proc/sys/kernel/random/uuid)
           echo "UUID=$UUID" >> $GITHUB_ENV
-          echo "UUID ساخته شد: $UUID"
-
-      - name: ⚙️ ساخت کانفیگ Xray
-        run: |
-          sudo tee /usr/local/etc/xray/config.json > /dev/null << ENDCONFIG
+          
+          # ساخت فایل کانفیگ
+          mkdir -p /tmp/xray_config
+          cat > /tmp/xray_config/config.json << EOF
           {
-            "log": {"loglevel": "warning"},
-            "inbounds": [{
-              "port": 443,
-              "protocol": "vless",
-              "settings": {
-                "clients": [{
-                  "id": "${UUID}",
-                  "level": 0,
-                  "email": "user@github-proxy.local"
-                }],
-                "decryption": "none"
-              },
-              "streamSettings": {
-                "network": "ws",
-                "security": "none",
-                "wsSettings": {
-                  "path": "/proxy",
-                  "headers": {"Host": "cloudflare.com"}
+            "log": {
+              "loglevel": "debug",
+              "access": "/tmp/xray_access.log",
+              "error": "/tmp/xray_error.log"
+            },
+            "inbounds": [
+              {
+                "port": 8080,
+                "protocol": "vless",
+                "settings": {
+                  "clients": [
+                    {
+                      "id": "${UUID}",
+                      "level": 0
+                    }
+                  ],
+                  "decryption": "none"
+                },
+                "streamSettings": {
+                  "network": "ws",
+                  "security": "none",
+                  "wsSettings": {
+                    "path": "/proxy"
+                  }
                 }
-              },
-              "sniffing": {
-                "enabled": true,
-                "destOverride": ["http", "tls"]
               }
-            }],
-            "outbounds": [{
-              "protocol": "freedom",
-              "settings": {},
-              "tag": "direct"
-            }]
+            ],
+            "outbounds": [
+              {
+                "protocol": "freedom",
+                "settings": {}
+              }
+            ]
           }
-          ENDCONFIG
+          EOF
           
-          echo "✅ کانفیگ ساخته شد"
+          echo "✅ کانفیگ ساخته شد:"
+          cat /tmp/xray_config/config.json
 
-      - name: 🚀 راه‌اندازی Xray در پس‌زمینه
+      - name: 🚀 راه‌اندازی و تست Xray
         run: |
-          # کشتن Xray قبلی اگر هست
-          sudo pkill xray 2>/dev/null || true
+          cd /tmp/xray_temp
           
-          # اجرای مستقیم در پس‌زمینه (بدون systemd)
-          sudo nohup /usr/local/bin/xray run -config /usr/local/etc/xray/config.json > /var/log/xray.log 2>&1 &
+          echo "شروع Xray..."
+          # اجرا در پس‌زمینه
+          nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray_stdout.log 2>&1 &
+          XRAY_PID=$!
+          echo "PID: $XRAY_PID"
           
           # صبر برای راه‌اندازی
-          sleep 3
+          sleep 5
           
-          # بررسی
-          if pgrep -f "xray run" > /dev/null; then
-            echo "✅ Xray در پس‌زمینه راه‌اندازی شد (PID: $(pgrep -f 'xray run'))"
+          # بررسی زنده بودن پروسه
+          if kill -0 $XRAY_PID 2>/dev/null; then
+            echo "✅ Xray در حال اجراست (PID: $XRAY_PID)"
           else
-            echo "❌ Xray راه‌اندازی نشد. لاگ خطا:"
-            cat /var/log/xray.log 2>/dev/null || echo "فایل لاگ موجود نیست"
+            echo "❌ Xray اجرا نشد!"
+            echo ""
+            echo "========== لاگ خطا =========="
+            cat /tmp/xray_error.log 2>/dev/null || echo "فایل خطا خالی است"
+            echo ""
+            echo "========== لاگ استاندارد =========="
+            cat /tmp/xray_stdout.log 2>/dev/null || echo "فایل stdout خالی است"
+            echo ""
+            echo "========== تست دستی =========="
+            ./xray run -config /tmp/xray_config/config.json -test
             exit 1
           fi
+          
+          # تست پورت
+          sleep 2
+          if netstat -tlnp 2>/dev/null | grep -q 8080 || ss -tlnp 2>/dev/null | grep -q 8080; then
+            echo "✅ پورت 8080 باز است"
+          else
+            echo "⚠️ پورت 8080 پیدا نشد، اما Xray در حال اجراست"
+            netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null
+          fi
 
-      - name: 🌐 دریافت آی‌پی و ساخت لینک
+      - name: 🌐 دریافت آی‌پی
         run: |
-          IP=""
-          for i in {1..5}; do
-            IP=$(curl -s --max-time 10 ifconfig.me || curl -s --max-time 10 ipinfo.io/ip || curl -s --max-time 10 icanhazip.com)
-            [ -n "$IP" ] && break
-            sleep 2
-          done
+          IP=$(curl -s --max-time 10 ifconfig.me)
+          if [ -z "$IP" ]; then
+            IP=$(curl -s --max-time 10 ipinfo.io/ip)
+          fi
+          if [ -z "$IP" ]; then
+            IP=$(curl -s --max-time 10 icanhazip.com)
+          fi
           
           if [ -z "$IP" ]; then
-            echo "❌ دریافت آی‌پی بعد از ۵ تلاش ناموفق بود"
+            echo "❌ خطا در دریافت آی‌پی"
             exit 1
           fi
           
           echo "IP=$IP" >> $GITHUB_ENV
           
-          START_TIME=$(date '+%Y-%m-%d %H:%M:%S' -u)
-          END_TIME=$(date -d "+${{ github.event.inputs.duration }} minutes" '+%Y-%m-%d %H:%M:%S' -u)
+          START_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
+          END_TIME=$(date -u -d "+${{ github.event.inputs.duration }} minutes" '+%Y-%m-%d %H:%M:%S')
           echo "START_TIME=$START_TIME" >> $GITHUB_ENV
           echo "END_TIME=$END_TIME" >> $GITHUB_ENV
           
-          VLESS_LINK="vless://${UUID}@${IP}:443?encryption=none&security=none&type=ws&path=%2Fproxy&host=cloudflare.com#GitHub-Proxy"
+          # ساخت لینک
+          VLESS_LINK="vless://${UUID}@${IP}:8080?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy"
           echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_ENV
           
           echo "✅ آی‌پی: $IP"
+          echo "✅ لینک: $VLESS_LINK"
 
-      - name: 📝 ساخت فایل‌های کانفیگ
+      - name: 📝 ساخت و آپلود فایل‌های کانفیگ
         run: |
           mkdir -p configs
-          TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
           
-          # ۱. فایل Markdown اصلی
-          cat > configs/PROXY_CONFIG.md << ENDMD
-          # 🟢 کانفیگ پروکسی گیتهاب - ${TIMESTAMP}
+          # فایل لینک خالص
+          echo "${VLESS_LINK}" > VLESS_LINK.txt
+          
+          # فایل اطلاعات کامل
+          cat > CONNECTION_INFO.md << EOF
+          # 🟢 پروکسی VLESS آماده استفاده
 
-          > ⚡ **وضعیت:** 🟢 فعال | ⏱️ **تا:** ${END_TIME} UTC
+          **وضعیت:** 🟢 آنلاین  
+          **اعتبار:** تا ${END_TIME} UTC
 
-          ## 📋 تنظیمات اتصال
-
-          | پارامتر | مقدار |
-          |---------|-------|
-          | پروتکل | VLESS |
-          | آدرس | \`${IP}\` |
-          | پورت | \`443\` |
-          | UUID | \`${UUID}\` |
-          | Encryption | \`none\` |
-          | Network | \`ws\` |
-          | Path | \`/proxy\` |
-          | Host | \`cloudflare.com\` |
-          | Security | \`none\` |
-
-          ## 🔗 لینک مستقیم (در Happ پیست کنید)
-
+          ## لینک مستقیم
           \`\`\`
           ${VLESS_LINK}
           \`\`\`
 
-          ## ⏱️ زمان‌بندی
+          ## تنظیمات دستی
+          | پارامتر | مقدار |
+          |---------|-------|
+          | پروتکل | VLESS |
+          | آدرس | ${IP} |
+          | پورت | 8080 |
+          | UUID | ${UUID} |
+          | Network | ws |
+          | Path | /proxy |
+          | Encryption | none |
 
-          - **شروع:** ${START_TIME} UTC
-          - **پایان:** ${END_TIME} UTC  
-          - **مدت:** ${{ github.event.inputs.duration }} دقیقه
+          ## زمان‌بندی
+          - شروع: ${START_TIME} UTC
+          - پایان: ${END_TIME} UTC
+          - مدت: ${{ github.event.inputs.duration }} دقیقه
 
           ---
-          ⚠️ این سرور موقت است. برای تمدید، ورک‌فلو را دوباره اجرا کنید.
-          ENDMD
+          ⚠️ موقت - پس از پایان غیرفعال می‌شود
+          EOF
           
-          # ۲. فایل لینک خالص
-          echo "${VLESS_LINK}" > configs/vless_link.txt
-          
-          # ۳. فایل JSON
-          cat > configs/config.json << ENDJSON
-          {
-            "protocol": "vless",
-            "address": "${IP}",
-            "port": 443,
-            "id": "${UUID}",
-            "encryption": "none",
-            "network": "ws",
-            "security": "none",
-            "wsSettings": {
-              "path": "/proxy",
-              "headers": {"Host": "cloudflare.com"}
-            },
-            "tag": "GitHub-Proxy-${TIMESTAMP}"
-          }
-          ENDJSON
-          
-          # ۴. فایل وضعیت
-          cat > configs/STATUS.md << ENDSTATUS
-          # 📊 وضعیت سرور
-
-          🟢 **آنلاین**
-          
-          - **شروع:** ${START_TIME} UTC
-          - **پایان:** ${END_TIME} UTC
-          - **آی‌پی:** ${IP}:443
-          
-          آخرین به‌روزرسانی: $(date '+%Y-%m-%d %H:%M:%S' -u) UTC
-          ENDSTATUS
-          
-          echo "✅ فایل‌های کانفیگ ساخته شدند:"
-          ls -lh configs/
-
-      - name: 📤 آپلود فوری فایل‌ها در مخزن
-        run: |
+          # آپلود
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
-          # کپی به ریشه مخزن
-          cp configs/PROXY_CONFIG.md CONNECTION_INFO.md 2>/dev/null || true
-          cp configs/vless_link.txt VLESS_LINK.txt 2>/dev/null || true
-          cp configs/STATUS.md SERVER_STATUS.md 2>/dev/null || true
+          git add VLESS_LINK.txt CONNECTION_INFO.md configs/
+          git commit -m "🟢 سرور فعال - ${START_TIME}" || echo "بدون تغییر"
           
-          git add -A
-          git commit -m "🟢 سرور فعال - ${START_TIME} تا ${END_TIME}" || echo "بدون تغییر"
-          git push origin HEAD:${{ github.ref }} || echo "push ناموفق - تلاش مجدد..."
-          git pull --rebase origin ${{ github.ref }} && git push origin HEAD:${{ github.ref }} || echo "⚠️ push نهایی ناموفق"
+          # تلاش برای push
+          for i in 1 2 3; do
+            if git push origin HEAD:${{ github.ref }} 2>/dev/null; then
+              echo "✅ Push موفق (تلاش $i)"
+              break
+            else
+              echo "⚠️ تلاش $i ناموفق - pull و تلاش مجدد..."
+              git pull --rebase origin ${{ github.ref }} 2>/dev/null || true
+              sleep 2
+            fi
+          done
           
           echo ""
-          echo "╔═══════════════════════════════════════════════════╗"
-          echo "║     ✅ فایل‌ها در مخزن آپلود شدند                ║"
-          echo "╠═══════════════════════════════════════════════════╣"
-          echo "║  📁 فایل‌های موجود:                             ║"
-          echo "║     • VLESS_LINK.txt (لینک خالص)                 ║"
-          echo "║     • CONNECTION_INFO.md (اطلاعات کامل)          ║"
-          echo "║     • SERVER_STATUS.md (وضعیت سرور)              ║"
-          echo "║     • configs/ (تنظیمات اضافی)                   ║"
-          echo "╠═══════════════════════════════════════════════════╣"
-          echo "║  📋 لینک مستقیم:                                 ║"
-          echo "║  ${VLESS_LINK}"
-          echo "╠═══════════════════════════════════════════════════╣"
-          echo "║  ⏱️  اعتبار تا: ${END_TIME} UTC         ║"
-          echo "╚═══════════════════════════════════════════════════╝"
+          echo "═══════════════════════════════════════"
+          echo "  📋 لینک پروکسی:"
+          echo "  ${VLESS_LINK}"
+          echo "═══════════════════════════════════════"
 
-      - name: ⏳ زنده نگه داشتن سرور
+      - name: ⏳ فعال نگه داشتن سرور
         run: |
           DURATION=${{ github.event.inputs.duration }}
           
-          # اسکریپت check
-          cat > check_xray.sh << 'EOF'
-          #!/bin/bash
-          if ! pgrep -f "xray run" > /dev/null; then
-            echo "⚠️  Xray از کار افتاده، راه‌اندازی مجدد..."
-            sudo nohup /usr/local/bin/xray run -config /usr/local/etc/xray/config.json > /var/log/xray.log 2>&1 &
-            sleep 2
-            if pgrep -f "xray run" > /dev/null; then
-              echo "✅ راه‌اندازی مجدد موفق"
-            else
-              echo "❌ راه‌اندازی مجدد ناموفق"
-            fi
-          fi
-          EOF
-          chmod +x check_xray.sh
-          
           echo "⏳ سرور برای ${DURATION} دقیقه فعال می‌ماند..."
-          echo "🟢 هر ۵ دقیقه وضعیت بررسی می‌شود"
+          echo "فایل‌ها در مخزن آپلود شدند"
           echo ""
           
           for ((i=1; i<=DURATION; i++)); do
             sleep 60
             REMAIN=$((DURATION - i))
             
+            # چک سلامت هر ۵ دقیقه
             if [ $((i % 5)) -eq 0 ]; then
-              ./check_xray.sh
-              echo "📊 [$i/${DURATION} دقیقه] - ${REMAIN} دقیقه باقی‌مانده | $(date '+%H:%M:%S' -u) UTC"
+              if pgrep -f "xray run" > /dev/null; then
+                echo "✅ [$i/${DURATION}] فعال - ${REMAIN} دقیقه باقی‌مانده"
+              else
+                echo "⚠️ [$i/${DURATION}] Xray از کار افتاده!"
+                # راه‌اندازی مجدد
+                cd /tmp/xray_temp
+                nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray_stdout.log 2>&1 &
+                echo "🔄 تلاش برای راه‌اندازی مجدد..."
+              fi
             fi
           done
           
           echo ""
-          echo "⏹️ زمان پایان. سرور خاموش می‌شود."
+          echo "⏹️ زمان پایان"
           
-          # به‌روزرسانی وضعیت به آفلاین
-          cat > configs/STATUS.md << ENDOFF
-          # 📊 وضعیت سرور
+          # علامت آفلاین
+          cat > SERVER_STATUS.md << EOF
+          # 🔴 سرور خاموش
           
-          🔴 **آفلاین**
+          خاموش شده در: $(date -u '+%Y-%m-%d %H:%M:%S') UTC  
+          مدت اجرا: ${DURATION} دقیقه
+          EOF
           
-          - **شروع:** ${START_TIME} UTC
-          - **پایان:** $(date '+%Y-%m-%d %H:%M:%S' -u) UTC
-          - **مدت:** ${{ github.event.inputs.duration }} دقیقه
-          
-          سرور در تاریخ $(date '+%Y-%m-%d %H:%M:%S' -u) UTC خاموش شد.
-          ENDOFF
-          
-          git add configs/STATUS.md SERVER_STATUS.md
-          git commit -m "🔴 سرور خاموش شد" 2>/dev/null || true
+          git add SERVER_STATUS.md
+          git commit -m "🔴 سرور خاموش" 2>/dev/null || true
           git push origin HEAD:${{ github.ref }} 2>/dev/null || true
-          echo "✅ وضعیت سرور به آفلاین تغییر کرد"
