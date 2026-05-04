@@ -27,7 +27,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq python3 python3-pip openssh-client curl wget
           pip3 install --quiet pysocks flask requests
-          
+          echo "✅ ابزارهای مورد نیاز نصب شدند"
+
       - name: 🌐 ساخت پروکسی SOCKS5 با Dante
         run: |
           # نصب Dante (SOCKS5 Server)
@@ -94,50 +95,90 @@ jobs:
         run: |
           PUBLIC_IP=$(curl -s ifconfig.me)
           echo "IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
-          echo "آی‌پی عمومی: $PUBLIC_IP"
+          echo ""
+          echo "════════════════════════════════════════════"
+          echo "🔵 آی‌پی عمومی سرور: $PUBLIC_IP"
+          echo "════════════════════════════════════════════"
 
-      - name: 📱 ارسال اطلاعات پروکسی به تلگرام
-        if: ${{ success() }}
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: 📱 نمایش اطلاعات کامل پروکسی در لاگ
         run: |
-          # دریافت آی‌پی از مرحله قبل
           IP="${{ steps.ip.outputs.IP }}"
+          END_TIME=$(date -d "+${{ github.event.inputs.duration }} minutes" '+%Y-%m-%d %H:%M:%S' -u)
           
-          # ساخت پیام
-          MESSAGE="🟢 پروکسی آماده استفاده است:
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════╗"
+          echo "║                                                        ║"
+          echo "║          🟢  پروکسی با موفقیت ساخته شد!                ║"
+          echo "║                                                        ║"
+          echo "╠══════════════════════════════════════════════════════════╣"
+          echo "║                                                        ║"
+          echo "║  🌐 آی‌پی عمومی:                                       ║"
+          echo "║     $IP                                      ║"
+          echo "║                                                        ║"
+          echo "║  📡 پروکسی SOCKS5:                                     ║"
+          echo "║     آدرس: $IP                                  ║"
+          echo "║     پورت: 1080                                         ║"
+          echo "║     رمز عبور: ندارد                                    ║"
+          echo "║                                                        ║"
+          echo "║  🌍 پروکسی HTTP/HTTPS:                                 ║"
+          echo "║     آدرس: $IP                                  ║"
+          echo "║     پورت: 8888                                         ║"
+          echo "║     رمز عبور: ندارد                                    ║"
+          echo "║                                                        ║"
+          echo "║  ⏰ زمان شروع:     $(date '+%Y-%m-%d %H:%M:%S' -u) UTC          ║"
+          echo "║  ⏰ زمان پایان:    $END_TIME UTC          ║"
+          echo "║  ⏳ مدت اعتبار:   ${{ github.event.inputs.duration }} دقیقه                              ║"
+          echo "║                                                        ║"
+          echo "╠══════════════════════════════════════════════════════════╣"
+          echo "║                                                        ║"
+          echo "║  📱 تنظیمات گوشی اندروید:                              ║"
+          echo "║                                                        ║"
+          echo "║  ۱. برنامه Postern را نصب کنید                         ║"
+          echo "║  ۲. پروکسی SOCKS5 با اطلاعات بالا بسازید               ║"
+          echo "║  ۳. یا از مرورگر Kiwi با افزونه SwitchyOmega           ║"
+          echo "║     برای پروکسی HTTP استفاده کنید                      ║"
+          echo "║                                                        ║"
+          echo "║  ⚠️  این پروکسی موقت است!                              ║"
+          echo "║  ⚠️  پس از اتمام زمان، اتصال قطع می‌شود                ║"
+          echo "║  ⚠️  برای تمدید، دوباره Workflow را اجرا کنید         ║"
+          echo "║                                                        ║"
+          echo "╚══════════════════════════════════════════════════════════╝"
+          echo ""
           
-          🌐 آی‌پی: \`$IP\`
-          
-          📡 SOCKS5:
-          ➖ آدرس: \`$IP\`
-          ➖ پورت: \`1080\`
-          ➖ بدون رمز عبور
-          
-          🌍 HTTP/HTTPS:
-          ➖ آدرس: \`$IP\`
-          ➖ پورت: \`8888\`
-          
-          ⏳ مدت اعتبار: ${{ github.event.inputs.duration }} دقیقه
-          🕐 زمان شروع: $(date '+%Y-%m-%d %H:%M:%S' -u) UTC
-          
-          ⚠️ این پروکسی موقت است و پس از اتمام زمان، غیرفعال می‌شود."
-          
-          # ارسال به تلگرام
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "text=${MESSAGE}" \
-            -d "parse_mode=Markdown" \
-            -d "disable_web_page_preview=true"
+          # ذخیره اطلاعات برای مراحل بعدی
+          echo "IP=$IP" >> $GITHUB_ENV
 
       - name: ⏳ زنده نگه داشتن پروکسی
         run: |
           DURATION_MINUTES="${{ github.event.inputs.duration }}"
           DURATION_SECONDS=$((DURATION_MINUTES * 60))
-          echo "⏱️ پروکسی برای ${DURATION_MINUTES} دقیقه فعال می‌ماند..."
-          echo "🕐 زمان پایان: $(date -d "+${DURATION_MINUTES} minutes" '+%Y-%m-%d %H:%M:%S' -u) UTC"
           
-          sleep $DURATION_SECONDS
+          echo ""
+          echo "⏱️  پروکسی برای ${DURATION_MINUTES} دقیقه فعال می‌ماند..."
+          echo "🕐  زمان پایان: $(date -d "+${DURATION_MINUTES} minutes" '+%Y-%m-%d %H:%M:%S' -u) UTC"
+          echo "📊  برای تست، می‌توانید از دستور زیر در ترمینال استفاده کنید:"
+          echo "    curl -x http://${{ steps.ip.outputs.IP }}:8888 http://ip-api.com/json"
+          echo ""
+          echo "🔄  هر ۶۰ ثانیه یکبار اتصال پروکسی بررسی می‌شود..."
+          echo ""
           
-          echo "⏹️ زمان اجرا به پایان رسید. پروکسی غیرفعال می‌شود."
+          # حلقه زنده نگه داشتن و تست دوره‌ای
+          for ((i=1; i<=DURATION_MINUTES; i++)); do
+            sleep 60
+            REMAINING=$((DURATION_MINUTES - i))
+            
+            # تست سریع پروکسی
+            if [ $((i % 5)) -eq 0 ]; then
+              echo "🔍 [$i/${DURATION_MINUTES} دقیقه] تست پروکسی SOCKS5..."
+              timeout 5 curl -x socks5h://${{ steps.ip.outputs.IP }}:1080 -s http://ip-api.com/json | grep -o '"query":"[^"]*"' && echo "✅ SOCKS5 فعال است" || echo "⚠️ SOCKS5 خطا داد"
+              
+              echo "🔍 [$i/${DURATION_MINUTES} دقیقه] تست پروکسی HTTP..."
+              timeout 5 curl -x http://${{ steps.ip.outputs.IP }}:8888 -s http://ip-api.com/json | grep -o '"query":"[^"]*"' && echo "✅ HTTP فعال است" || echo "⚠️ HTTP خطا داد"
+              echo ""
+            else
+              echo "⏳ [$i/${DURATION_MINUTES} دقیقه] پروکسی فعال است... ($REMAINING دقیقه باقی‌مانده)"
+            fi
+          done
+          
+          echo ""
+          echo "⏹️  زمان اجرا به پایان رسید. پروکسی غیرفعال می‌شود."
