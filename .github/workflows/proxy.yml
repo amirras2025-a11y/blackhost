@@ -1,4 +1,4 @@
-name: 🚀 VMess Anti-DPI Proxy
+name: 🚀 VMess Anti-DPI Proxy (Fixed)
 
 on:
   workflow_dispatch:
@@ -30,38 +30,44 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 🔓 فعال‌سازی دسترسی به پورت‌های پایین
+        run: |
+          # راه‌حل ۱: اجازه binding به binary خاص
+          sudo setcap 'cap_net_bind_service=+ep' /tmp/xray_temp/xray 2>/dev/null || true
+          
+          # راه‌حل ۲: کاهش محدودیت پورت (اگه راه‌حل ۱ جواب نداد)
+          echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee /etc/sysctl.d/99-ports.conf
+          sudo sysctl -p /etc/sysctl.d/99-ports.conf
+
       - name: 📦 دانلود و نصب Xray
         run: |
           cd /tmp
           
-          # چند لینک دانلود جایگزین
+          # دانلود
           wget -q --timeout=30 \
             "https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip" \
-            -O xray.zip || \
-          wget -q --timeout=30 \
-            "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" \
             -O xray.zip || \
           curl -L -o xray.zip \
             "https://github.com/XTLS/Xray-core/releases/download/v1.8.21/Xray-linux-64.zip"
           
           if [ ! -f xray.zip ]; then
-            echo "❌ دانلود ناموفق بود"
+            echo "❌ دانلود ناموفق"
             exit 1
           fi
           
           unzip -o xray.zip -d xray_temp
           chmod +x xray_temp/xray
           
-          # تست نسخه
-          ./xray_temp/xray version 2>&1 || true
-          echo "✅ Xray آماده است"
+          # حالا setcap رو اجرا کن
+          sudo setcap 'cap_net_bind_service=+ep' xray_temp/xray
+          
+          echo "✅ Xray نصب و آماده شد"
 
-      - name: 🔑 ساخت UUID و Alert ID
+      - name: 🔑 ساخت کانفیگ VMess
         run: |
           UUID=$(cat /proc/sys/kernel/random/uuid)
           echo "UUID=$UUID" >> $GITHUB_ENV
           
-          # ساخت کانفیگ VMess
           mkdir -p /tmp/xray_config
           cat > /tmp/xray_config/config.json << 'ENDOFCONFIG'
           {
@@ -101,50 +107,46 @@ jobs:
           }
           ENDOFCONFIG
           
-          # جایگذاری UUID
           sed -i "s/PLACEHOLDER_UUID/${UUID}/g" /tmp/xray_config/config.json
-          
-          echo "✅ کانفیگ VMess ساخته شد"
+          echo "✅ کانفیگ ساخته شد"
 
-      - name: 🚀 راه‌اندازی Xray
+      - name: 🚀 راه‌اندازی Xray روی پورت ۴۴۳
         run: |
           cd /tmp/xray_temp
           
-          echo "شروع Xray..."
-          nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray_stdout.log 2>&1 &
+          # روش ۱: اجرا با sudo در پس‌زمینه
+          sudo nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
           XRAY_PID=$!
           
-          # صبر برای راه‌اندازی
           sleep 5
           
-          # بررسی
           if kill -0 $XRAY_PID 2>/dev/null; then
-            echo "✅ Xray اجرا شد (PID: $XRAY_PID)"
+            echo "✅ Xray با sudo اجرا شد (PID: $XRAY_PID)"
           else
-            echo "❌ Xray اجرا نشد"
-            echo ""
-            echo "=== لاگ خطا ==="
-            cat /tmp/xray_stdout.log 2>/dev/null
-            echo ""
-            echo "=== تست با dry-run ==="
-            ./xray run -config /tmp/xray_config/config.json -test 2>&1
-            exit 1
+            echo "⚠️ روش اول ناموفق - تلاش با setcap..."
+            
+            # روش ۲: با setcap قبلی
+            nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
+            XRAY_PID=$!
+            sleep 5
+            
+            if kill -0 $XRAY_PID 2>/dev/null; then
+              echo "✅ Xray با setcap اجرا شد (PID: $XRAY_PID)"
+            else
+              echo "❌ هر دو روش ناموفق"
+              cat /tmp/xray.log
+              exit 1
+            fi
           fi
           
-          # تست پورت
+          # بررسی پورت
           sleep 2
-          if ss -tlnp 2>/dev/null | grep -q 443 || netstat -tlnp 2>/dev/null | grep -q 443; then
-            echo "✅ پورت 443 باز است"
-          else
-            echo "⚠️ بررسی پورت:"
-            ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || true
-          fi
+          sudo ss -tlnp | grep 443 || sudo netstat -tlnp | grep 443 || echo "⚠️ پورت پیدا نشد ولی Xray در حال اجراست"
 
       - name: 🌐 دریافت آی‌پی
         run: |
-          # تلاش برای دریافت آی‌پی
           IP=""
-          for service in "ifconfig.me" "ipinfo.io/ip" "icanhazip.com" "api.ipify.org" "checkip.amazonaws.com"; do
+          for service in "ifconfig.me" "ipinfo.io/ip" "icanhazip.com" "api.ipify.org"; do
             IP=$(curl -s --max-time 5 "$service" 2>/dev/null)
             if [ -n "$IP" ] && [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               break
@@ -152,7 +154,7 @@ jobs:
           done
           
           if [ -z "$IP" ]; then
-            echo "❌ خطا در دریافت آی‌پی بعد از همه تلاش‌ها"
+            echo "❌ خطا در دریافت آی‌پی"
             exit 1
           fi
           
@@ -161,11 +163,10 @@ jobs:
 
       - name: 🔗 ساخت لینک VMess
         run: |
-          # ساخت JSON کانفیگ کلاینت
           CLIENT_CONFIG=$(cat << ENDJSON
           {
             "v": "2",
-            "ps": "GitHub-Proxy",
+            "ps": "GitHub-Proxy-443",
             "add": "${IP}",
             "port": "443",
             "id": "${UUID}",
@@ -177,139 +178,115 @@ jobs:
             "path": "/ws",
             "tls": "",
             "sni": "",
-            "alpn": "",
-            "fp": ""
+            "alpn": ""
           }
           ENDJSON
           )
           
-          # رمزنگاری Base64 برای لینک VMess
           VMESS_LINK="vmess://$(echo -n "$CLIENT_CONFIG" | base64 -w 0)"
-          
           echo "VMESS_LINK=$VMESS_LINK" >> $GITHUB_ENV
           
           START_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')
           END_TIME=$(date -u -d "+${{ github.event.inputs.duration }} minutes" '+%Y-%m-%d %H:%M:%S')
           echo "START_TIME=$START_TIME" >> $GITHUB_ENV
           echo "END_TIME=$END_TIME" >> $GITHUB_ENV
+          
+          echo "✅ لینک VMess ساخته شد"
 
-      - name: 📝 ساخت فایل‌های کانفیگ
+      - name: 📝 ساخت و آپلود فایل‌ها
         run: |
           mkdir -p configs
           
-          # فایل لینک خالص
+          # لینک خالص
           echo "${VMESS_LINK}" > VLESS_LINK.txt
           
-          # فایل اطلاعات کامل
+          # فایل اطلاعات
           cat > CONNECTION_INFO.md << ENDMD
-          # 🟢 پروکسی VMess آماده استفاده
+          # 🟢 پروکسی VMess روی پورت ۴۴۳
 
           **وضعیت:** 🟢 آنلاین  
           **اعتبار:** تا ${END_TIME} UTC
 
-          ## 📋 لینک مستقیم (در Happ پیست کنید)
-
+          ## 🔗 لینک مستقیم (در Happ پیست کنید)
           \`\`\`
           ${VMESS_LINK}
           \`\`\`
 
           ## ⚙️ تنظیمات دستی
-
           | پارامتر | مقدار |
           |---------|-------|
-          | **پروتکل** | VMess |
-          | **آدرس** | \`${IP}\` |
-          | **پورت** | \`443\` |
-          | **UUID** | \`${UUID}\` |
-          | **Alter ID** | \`0\` |
-          | **Security** | \`auto\` |
-          | **Network** | \`ws\` |
-          | **Path** | \`/ws\` |
-          | **Host** | \`github.com\` |
-          | **TLS** | خیر |
+          | پروتکل | VMess |
+          | آدرس | \`${IP}\` |
+          | پورت | \`443\` |
+          | UUID | \`${UUID}\` |
+          | Alter ID | \`0\` |
+          | Security | \`auto\` |
+          | Network | \`ws\` |
+          | Path | \`/ws\` |
+          | Host | \`github.com\` |
 
           ## ⏱️ زمان‌بندی
-          - **شروع:** ${START_TIME} UTC
-          - **پایان:** ${END_TIME} UTC
-          - **مدت:** ${{ github.event.inputs.duration }} دقیقه
+          - شروع: ${START_TIME} UTC
+          - پایان: ${END_TIME} UTC
+          - مدت: ${{ github.event.inputs.duration }} دقیقه
 
           ---
-          ⚠️ این پروکسی موقت است. پس از پایان زمان غیرفعال می‌شود.
-          برای استفاده مجدد، ورک‌فلو را دوباره اجرا کنید.
+          ⚠️ این پروکسی موقت است. پس از پایان غیرفعال می‌شود.
           ENDMD
           
-          # فایل JSON خالص برای import
-          echo "$CLIENT_CONFIG" > configs/vmess_config.json
+          # کانفیگ JSON
+          echo "$CLIENT_CONFIG" | python3 -m json.tool > configs/vmess_config.json 2>/dev/null || echo "$CLIENT_CONFIG" > configs/vmess_config.json
           
-          echo "✅ فایل‌های کانفیگ ساخته شدند"
-
-      - name: 📤 آپلود در مخزن
-        run: |
+          # آپلود
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
-          # کپی فایل‌ها
-          cp configs/vmess_config.json ./vmess_config.json 2>/dev/null || true
-          
           git add -A
-          git commit -m "🟢 پروکسی VMess فعال - ${START_TIME}" || echo "بدون تغییر"
+          git commit -m "🟢 پروکسی VMess فعال روی پورت 443" || echo "بدون تغییر"
           
-          # تلاش برای push
           for i in 1 2 3; do
             if git push origin HEAD:${{ github.ref }} 2>/dev/null; then
-              echo "✅ آپلود موفق در مخزن"
+              echo "✅ آپلود موفق"
               break
             else
-              echo "⚠️ تلاش $i ناموفق - سعی مجدد..."
               git pull --rebase origin ${{ github.ref }} 2>/dev/null || true
               sleep 3
             fi
           done
           
           echo ""
-          echo "══════════════════════════════════════════════════════"
-          echo "  🎉 پروکسی VMess آماده است!"
+          echo "════════════════════════════════════════════════"
+          echo "  🎉 پروکسی VMess آماده!"
           echo ""
-          echo "  📋 لینک (در Happ پیست کنید):"
+          echo "  📋 لینک مستقیم:"
           echo "  ${VMESS_LINK}"
           echo ""
           echo "  ⏱️  اعتبار: ${END_TIME} UTC"
-          echo "══════════════════════════════════════════════════════"
+          echo "════════════════════════════════════════════════"
 
       - name: ⏳ زنده نگه داشتن سرور
         run: |
           DURATION=${{ github.event.inputs.duration }}
           
           echo "⏳ سرور برای ${DURATION} دقیقه فعال می‌ماند..."
-          echo ""
           
           for ((i=1; i<=DURATION; i++)); do
             sleep 60
             REMAIN=$((DURATION - i))
             
-            # گزارش هر ۵ دقیقه
             if [ $((i % 5)) -eq 0 ]; then
+              # بررسی سلامت
               if pgrep -f "xray run" > /dev/null; then
                 echo "✅ [$i/${DURATION}] فعال - ${REMAIN} دقیقه باقی‌مانده"
               else
-                echo "⚠️ [$i/${DURATION}] Xray خاموش شد - راه‌اندازی مجدد..."
+                echo "⚠️ [$i/${DURATION}] Xray خاموش - راه‌اندازی مجدد..."
                 cd /tmp/xray_temp
-                nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray_stdout.log 2>&1 &
+                sudo nohup ./xray run -config /tmp/xray_config/config.json > /tmp/xray.log 2>&1 &
+                sleep 3
+                pgrep -f "xray run" > /dev/null && echo "✅ راه‌اندازی مجدد موفق" || echo "❌ راه‌اندازی مجدد ناموفق"
               fi
             fi
           done
           
           echo ""
-          echo "⏹️ زمان به پایان رسید. سرور خاموش می‌شود."
-          
-          # به‌روزرسانی وضعیت در مخزن
-          cat > SERVER_STATUS.md << EOF
-          # 🔴 سرور خاموش
-          
-          **خاموش شده در:** $(date -u '+%Y-%m-%d %H:%M:%S') UTC  
-          **مدت اجرا:** ${DURATION} دقیقه
-          EOF
-          
-          git add SERVER_STATUS.md
-          git commit -m "🔴 سرور خاموش شد" 2>/dev/null || true
-          git push origin HEAD:${{ github.ref }} 2>/dev/null || true
+          echo "⏹️ پایان زمان. سرور خاموش شد."
