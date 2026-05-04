@@ -1,0 +1,1 @@
+vless://1dcb4f1f-8598-4d69-bf97-bbb6d15137ac@145.132.99.129:8080?encryption=none&security=none&type=ws&path=%2Fproxy#GitHub-Proxy
