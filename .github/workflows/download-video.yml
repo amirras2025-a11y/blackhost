@@ -1,392 +1,194 @@
-name: Download Video from Any Site
+name: 🎬 Video Downloader (yt-dlp)
 
 on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: 'Video URL (YouTube, Instagram, Twitter, TikTok, etc.)'
+        description: '🔗 لینک ویدیو (از یوتیوب، اینستاگرام، توییتر، آپارات و...)'
         required: true
         type: string
-        default: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
       quality:
-        description: 'Video Quality'
-        required: false
+        description: '📊 کیفیت دانلود'
+        required: true
+        default: 'best_video'
         type: choice
-        default: 'best'
         options:
-          - 'best'
-          - 'bestvideo+bestaudio'
+          - 'best_video (بهترین ویدیو + بهترین صدا)'
           - '1080p'
           - '720p'
           - '480p'
           - '360p'
-          - 'worst'
-      output_filename:
-        description: 'Output filename (without extension) - optional'
-        required: false
-        type: string
-        default: 'video'
-      cookies:
-        description: 'YouTube cookies (Base64 encoded) for bypassing restrictions - optional'
-        required: false
-        type: string
-        default: ''
+          - 'worst_video (کمترین کیفیت)'
 
 permissions:
   contents: write
 
 jobs:
-  download-video:
+  download:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 350
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Setup yt-dlp with FFmpeg and aria2
-      uses: AnimMouse/setup-yt-dlp@v3
-      with:
-        install-ffmpeg: true
-        use-aria2: true
-        use-ejs-node: true
-    
-    - name: Setup YouTube cookies (if provided)
-      if: ${{ github.event.inputs.cookies != '' }}
-      uses: AnimMouse/setup-yt-dlp/cookies@v3
-      with:
-        cookies: ${{ github.event.inputs.cookies }}
-    
-    - name: Create output directory
-      run: mkdir -p downloaded_videos
-    
-    - name: Download video
-      id: download
-      env:
-        VIDEO_URL: ${{ github.event.inputs.video_url }}
-        QUALITY: ${{ github.event.inputs.quality }}
-        OUTPUT_NAME: ${{ github.event.inputs.output_filename }}
-      run: |
-        cd downloaded_videos
-        
-        # تنظیم کیفیت بر اساس انتخاب کاربر
-        case "$QUALITY" in
-          "best")
-            FORMAT="best[ext=mp4]/best"
-            ;;
-          "bestvideo+bestaudio")
-            FORMAT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            ;;
-          "1080p")
-            FORMAT="bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
-            ;;
-          "720p")
-            FORMAT="bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
-            ;;
-          "480p")
-            FORMAT="bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
-            ;;
-          "360p")
-            FORMAT="bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
-            ;;
-          "worst")
-            FORMAT="worst[ext=mp4]/worst"
-            ;;
-          *)
-            FORMAT="best[ext=mp4]/best"
-            ;;
-        esac
-        
-        echo "🎬 Downloading video with format: $FORMAT"
-        
-        # دانلود با تنظیمات پیشرفته
-        yt-dlp \
-          --format "$FORMAT" \
-          --output "$OUTPUT_NAME.%(ext)s" \
-          --merge-output-format mp4 \
-          --external-downloader aria2c \
-          --external-downloader-args "aria2c:-x 16 -s 16 -k 1M" \
-          --retries 10 \
-          --fragment-retries 10 \
-          --no-check-certificate \
-          --add-metadata \
-          --embed-thumbnail \
-          --embed-chapters \
-          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-          "$VIDEO_URL" \
-          2>&1 | tee download.log
-        
-        # ذخیره نام فایل دانلود شده برای مرحله بعد
-        DOWNLOADED_FILE=$(ls -t | grep -E '\.(mp4|mkv|webm|m4v)$' | head -1)
-        echo "downloaded_file=$DOWNLOADED_FILE" >> $GITHUB_OUTPUT
-        echo "✅ Downloaded: $DOWNLOADED_FILE"
-        
-        # نمایش اطلاعات ویدیو
-        echo ""
-        echo "📊 Video Info:"
-        yt-dlp --dump-json --skip-download "$VIDEO_URL" | jq -r '"Title: " + .title, "Duration: " + (.duration|tostring) + " seconds", "Uploader: " + .uploader, "Views: " + (.view_count|tostring)' 2>/dev/null || echo "Info extraction failed"
-    
-    - name: Get video info for HTML
-      id: video_info
-      env:
-        VIDEO_URL: ${{ github.event.inputs.video_url }}
-      run: |
-        cd downloaded_videos
-        VIDEO_FILE=$(ls -t | grep -E '\.(mp4|mkv|webm|m4v)$' | head -1)
-        
-        # استخراج اطلاعات ویدیو با yt-dlp
-        if command -v yt-dlp &> /dev/null; then
-          TITLE=$(yt-dlp --dump-json --skip-download "$VIDEO_URL" 2>/dev/null | jq -r '.title // "Unknown Title"' || echo "Unknown Title")
-          DURATION=$(yt-dlp --dump-json --skip-download "$VIDEO_URL" 2>/dev/null | jq -r '.duration // 0' || echo "0")
-          UPLOADER=$(yt-dlp --dump-json --skip-download "$VIDEO_URL" 2>/dev/null | jq -r '.uploader // "Unknown"' || echo "Unknown")
-        else
-          TITLE="Video from $(echo "$VIDEO_URL" | cut -d'/' -f3)"
-          DURATION="Unknown"
-          UPLOADER="Unknown"
-        fi
-        
-        # تبدیل ثانیه به زمان readable
-        if [ "$DURATION" != "Unknown" ] && [ "$DURATION" != "0" ]; then
-          HOURS=$((DURATION / 3600))
-          MINUTES=$(((DURATION % 3600) / 60))
-          SECONDS=$((DURATION % 60))
-          if [ $HOURS -gt 0 ]; then
-            READABLE_TIME="${HOURS}h ${MINUTES}m ${SECONDS}s"
-          else
-            READABLE_TIME="${MINUTES}m ${SECONDS}s"
+      - name: 📦 نصب ابزارهای ضروری
+        run: |
+          echo "📥 در حال نصب yt-dlp و ffmpeg..."
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          echo "✅ ابزارها آماده هستند"
+          yt-dlp --version
+          ffmpeg -version 2>&1 | head -1
+
+      - name: 🎯 تنظیم فرمت با توجه به کیفیت انتخابی
+        id: format_selector
+        run: |
+          QUALITY="${{ github.event.inputs.quality }}"
+          echo "کیفیت درخواستی: $QUALITY"
+
+          case "$QUALITY" in
+            "best_video (بهترین ویدیو + بهترین صدا)")
+              FORMAT="bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best"
+              MERGE="mp4"
+              ;;
+            "1080p")
+              FORMAT="bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+              MERGE="mp4"
+              ;;
+            "720p")
+              FORMAT="bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best[height<=720]"
+              MERGE="mp4"
+              ;;
+            "480p")
+              FORMAT="bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best[height<=480]"
+              MERGE="mp4"
+              ;;
+            "360p")
+              FORMAT="bv*[height<=360][ext=mp4]+ba[ext=m4a]/b[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio/best[height<=360]"
+              MERGE="mp4"
+              ;;
+            "worst_video (کمترین کیفیت)")
+              FORMAT="wv*[ext=mp4]+wa[ext=m4a]/w[ext=mp4]/worstvideo+worstaudio/worst"
+              MERGE="mp4"
+              ;;
+            *)
+              FORMAT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+              MERGE="mp4"
+              ;;
+          esac
+
+          echo "FORMAT=$FORMAT" >> $GITHUB_ENV
+          echo "MERGE=$MERGE" >> $GITHUB_ENV
+          echo "✅ فرمت انتخاب شد: $FORMAT"
+
+      - name: 📥 دانلود ویدیو (تلاش اول)
+        id: download
+        continue-on-error: true
+        run: |
+          echo "🎬 شروع دانلود..."
+          echo "🔗 لینک: ${{ github.event.inputs.video_url }}"
+
+          # ساخت پوشه موقت
+          mkdir -p /tmp/videos
+
+          # نام فایل: عنوان اصلی ویدیو + فرمت
+          yt-dlp \
+            --format "$FORMAT" \
+            --output "/tmp/videos/%(title)s.%(ext)s" \
+            --merge-output-format $MERGE \
+            --embed-metadata \
+            --no-playlist \
+            --socket-timeout 60 \
+            --retries 10 \
+            --fragment-retries 10 \
+            --no-check-certificates \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            "${{ github.event.inputs.video_url }}"
+
+          echo "✅ دانلود اولیه کامل شد"
+
+      - name: 📥 دانلود ویدیو (تلاش دوم - ساده)
+        id: download_fallback
+        if: steps.download.outcome == 'failure'
+        run: |
+          echo "⚠️ دانلود اول ناموفق بود. تلاش با تنظیمات ساده‌تر..."
+          
+          mkdir -p /tmp/videos
+          
+          yt-dlp \
+            --format "best[ext=mp4]/bestvideo+bestaudio/best" \
+            --output "/tmp/videos/%(title)s.%(ext)s" \
+            --merge-output-format mp4 \
+            --no-playlist \
+            --socket-timeout 60 \
+            --retries 10 \
+            --fragment-retries 10 \
+            --no-check-certificates \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "${{ github.event.inputs.video_url }}"
+
+          echo "✅ دانلود دوم کامل شد"
+
+      - name: 🔍 پیدا کردن فایل دانلود شده
+        id: find_file
+        run: |
+          echo "📂 فایل‌های موجود در /tmp/videos/:"
+          ls -lh /tmp/videos/
+
+          # پیدا کردن بزرگترین فایل ویدیویی
+          VIDEO_FILE=$(find /tmp/videos -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.flv" \) -printf "%s %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+
+          if [ -z "$VIDEO_FILE" ]; then
+            echo "❌ هیچ فایل ویدیویی در /tmp/videos یافت نشد!"
+            echo ""
+            echo "محتوای پوشه موقت:"
+            ls -la /tmp/videos/
+            echo ""
+            echo "بررسی پوشه اصلی:"
+            ls -la *.mp4 *.mkv *.webm 2>/dev/null || echo "فایلی در ریشه نیست"
+            exit 1
           fi
-        else
-          READABLE_TIME="Unknown"
-        fi
-        
-        # ذخیره در environment variables برای HTML
-        echo "VIDEO_TITLE=$TITLE" >> $GITHUB_ENV
-        echo "VIDEO_DURATION=$READABLE_TIME" >> $GITHUB_ENV
-        echo "VIDEO_UPLOADER=$UPLOADER" >> $GITHUB_ENV
-        echo "VIDEO_FILENAME=$VIDEO_FILE" >> $GITHUB_ENV
-        echo "PROCESSED_URL=$VIDEO_URL" >> $GITHUB_ENV
-        
-        # محاسبه حجم فایل
-        FILE_SIZE=$(ls -lh "$VIDEO_FILE" | awk '{print $5}')
-        echo "VIDEO_SIZE=$FILE_SIZE" >> $GITHUB_ENV
-    
-    - name: Generate video player HTML
-      run: |
-        cat > output/video-player.html << 'EOF'
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Video Player - ${{ env.VIDEO_TITLE }}</title>
-            <style>
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
-                }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                    background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
-                    min-height: 100vh;
-                    padding: 20px;
-                }
-                .container {
-                    max-width: 1200px;
-                    margin: 0 auto;
-                }
-                .video-card {
-                    background: rgba(255,255,255,0.1);
-                    backdrop-filter: blur(10px);
-                    border-radius: 24px;
-                    overflow: hidden;
-                    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-                }
-                .video-container {
-                    position: relative;
-                    background: #000;
-                }
-                video {
-                    width: 100%;
-                    max-height: 70vh;
-                    display: block;
-                }
-                .video-info {
-                    padding: 24px;
-                    color: white;
-                }
-                h1 {
-                    font-size: 1.8rem;
-                    margin-bottom: 12px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    flex-wrap: wrap;
-                }
-                .badge {
-                    display: inline-block;
-                    background: #e74c3c;
-                    padding: 4px 12px;
-                    border-radius: 20px;
-                    font-size: 0.8rem;
-                    font-weight: normal;
-                }
-                .meta-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 16px;
-                    margin: 20px 0;
-                    padding: 16px;
-                    background: rgba(255,255,255,0.1);
-                    border-radius: 16px;
-                }
-                .meta-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }
-                .meta-item strong {
-                    color: #f1c40f;
-                }
-                .source-link {
-                    color: #3498db;
-                    text-decoration: none;
-                    word-break: break-all;
-                }
-                .source-link:hover {
-                    text-decoration: underline;
-                }
-                .download-section {
-                    margin-top: 20px;
-                    padding-top: 20px;
-                    border-top: 1px solid rgba(255,255,255,0.2);
-                    display: flex;
-                    gap: 16px;
-                    flex-wrap: wrap;
-                }
-                .download-btn {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 8px;
-                    background: #2ecc71;
-                    color: white;
-                    padding: 12px 24px;
-                    border-radius: 12px;
-                    text-decoration: none;
-                    font-weight: 500;
-                    transition: transform 0.2s, background 0.2s;
-                }
-                .download-btn:hover {
-                    background: #27ae60;
-                    transform: translateY(-2px);
-                }
-                .copy-btn {
-                    background: #3498db;
-                    color: white;
-                    border: none;
-                    padding: 12px 24px;
-                    border-radius: 12px;
-                    cursor: pointer;
-                    font-weight: 500;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 8px;
-                    transition: transform 0.2s;
-                }
-                .copy-btn:hover {
-                    background: #2980b9;
-                    transform: translateY(-2px);
-                }
-                .footer {
-                    margin-top: 24px;
-                    text-align: center;
-                    color: rgba(255,255,255,0.7);
-                    font-size: 0.85rem;
-                    padding: 20px;
-                }
-                .toast {
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    background: #2ecc71;
-                    color: white;
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    z-index: 1000;
-                    animation: slideIn 0.3s ease;
-                }
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
-                @media (max-width: 768px) {
-                    h1 { font-size: 1.3rem; }
-                    .meta-grid { grid-template-columns: 1fr; }
-                    .download-section { flex-direction: column; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="video-card">
-                    <div class="video-container">
-                        <video controls autoplay>
-                            <source src="../downloaded_videos/${{ env.VIDEO_FILENAME }}" type="video/mp4">
-                            Your browser does not support the video tag.
-                        </video>
-                    </div>
-                    <div class="video-info">
-                        <h1>
-                            🎬 ${{ env.VIDEO_TITLE }}
-                            <span class="badge">MP4</span>
-                        </h1>
-                        <div class="meta-grid">
-                            <div class="meta-item">⏱️ <strong>Duration:</strong> ${{ env.VIDEO_DURATION }}</div>
-                            <div class="meta-item">👤 <strong>Uploader:</strong> ${{ env.VIDEO_UPLOADER }}</div>
-                            <div class="meta-item">💾 <strong>File Size:</strong> ${{ env.VIDEO_SIZE }}</div>
-                            <div class="meta-item">🌐 <strong>Source:</strong> <a href="${{ env.PROCESSED_URL }}" class="source-link" target="_blank">${{ env.PROCESSED_URL }}</a></div>
-                        </div>
-                        <div class="download-section">
-                            <a href="../downloaded_videos/${{ env.VIDEO_FILENAME }}" download class="download-btn">
-                                ⬇️ Download Video
-                            </a>
-                            <button class="copy-btn" onclick="copyToClipboard(window.location.href)">
-                                📋 Copy Gallery Link
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="footer">
-                    🤖 Downloaded using yt-dlp on GitHub Actions • Video is stored directly in this repository
-                </div>
-            </div>
-            <script>
-                function copyToClipboard(text) {
-                    navigator.clipboard.writeText(text).then(() => {
-                        showToast('✓ Link copied to clipboard!');
-                    }).catch(() => {
-                        showToast('Failed to copy');
-                    });
-                }
-                function showToast(message) {
-                    const toast = document.createElement('div');
-                    toast.className = 'toast';
-                    toast.textContent = message;
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.remove(), 2000);
-                }
-            </script>
-        </body>
-        </html>
-        EOF
-        
-        mkdir -p output
-        
-        echo "✅ HTML player generated at output/video-player.html"
-    
-    - name: Commit and push
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "Download video: ${{ env.VIDEO_TITLE }}"
-        commit_user_name: "github-actions[bot]"
-        commit_user_email: "github-actions[bot]@users.noreply.github.com"
-        file_pattern: "downloaded_videos/* output/*"
+
+          FILE_SIZE=$(du -h "$VIDEO_FILE" | cut -f1)
+          FILE_NAME=$(basename "$VIDEO_FILE")
+
+          echo "VIDEO_PATH=$VIDEO_FILE" >> $GITHUB_ENV
+          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+
+          echo ""
+          echo "══════════════════════════════════════════"
+          echo "  ✅ فایل پیدا شد:"
+          echo "  📹 نام:   $FILE_NAME"
+          echo "  📦 حجم:   $FILE_SIZE"
+          echo "  📁 مسیر:  $VIDEO_FILE"
+          echo "══════════════════════════════════════════"
+
+      - name: 📤 آپلود فایل به Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE_NAME }}
+          path: ${{ env.VIDEO_PATH }}
+          retention-days: 7
+          compression-level: 0
+
+      - name: 📊 نمایش نتیجه نهایی
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║                                                              ║"
+          echo "║              🎉 دانلود با موفقیت انجام شد!                   ║"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  📹 نام فایل:  ${FILE_NAME}"
+          echo "║  📦 حجم:       ${FILE_SIZE}"
+          echo "║                                                              ║"
+          echo "║  📥 روش دریافت:                                             ║"
+          echo "║     1. به تب Actions بروید                                   ║"
+          echo "║     2. همین اجرا (run) را انتخاب کنید                       ║"
+          echo "║     3. به پایین صفحه بروید (بخش Artifacts)                  ║"
+          echo "║     4. فایل «${FILE_NAME}» را دانلود کنید                   ║"
+          echo "║                                                              ║"
+          echo "║  ⏱️  ماندگاری فایل: ۷ روز                                   ║"
+          echo "║                                                              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
