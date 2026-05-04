@@ -1,0 +1,143 @@
+name: 🚀 Temporary Proxy Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '⏱️ مدت زمان اجرای پروکسی (دقیقه، حداکثر ۳۴۰)'
+        required: true
+        default: '300'
+        type: choice
+        options:
+          - '60'
+          - '120'
+          - '180'
+          - '240'
+          - '300'
+          - '340'
+
+jobs:
+  create-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+      - name: 📦 نصب ابزارهای مورد نیاز
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3 python3-pip openssh-client curl wget
+          pip3 install --quiet pysocks flask requests
+          
+      - name: 🌐 ساخت پروکسی SOCKS5 با Dante
+        run: |
+          # نصب Dante (SOCKS5 Server)
+          sudo apt-get install -y dante-server
+          
+          # پیکربندی Dante
+          sudo bash -c 'cat > /etc/danted.conf << EOF
+          logoutput: stderr
+          internal: 0.0.0.0 port = 1080
+          external: eth0
+          method: username none
+          clientmethod: none
+          user.privileged: root
+          user.notprivileged: nobody
+          client pass {
+              from: 0.0.0.0/0 to: 0.0.0.0/0
+              log: connect disconnect error
+          }
+          pass {
+              from: 0.0.0.0/0 to: 0.0.0.0/0
+              protocol: tcp udp
+              log: connect disconnect error
+          }
+          EOF'
+          
+          # راه‌اندازی Dante
+          sudo systemctl restart danted
+          sudo systemctl enable danted
+          echo "✅ پروکسی SOCKS5 روی پورت 1080 راه‌اندازی شد"
+
+      - name: 🌐 ساخت پروکسی HTTP/HTTPS با Tinyproxy
+        run: |
+          # نصب Tinyproxy
+          sudo apt-get install -y tinyproxy
+          
+          # پیکربندی Tinyproxy
+          sudo bash -c 'cat > /etc/tinyproxy/tinyproxy.conf << EOF
+          User tinyproxy
+          Group tinyproxy
+          Port 8888
+          Timeout 600
+          DefaultErrorFile "/usr/share/tinyproxy/default.html"
+          StatFile "/usr/share/tinyproxy/stats.html"
+          LogLevel Info
+          MaxClients 100
+          MinSpareServers 5
+          MaxSpareServers 20
+          StartServers 10
+          MaxRequestsPerChild 0
+          Allow 0.0.0.0/0
+          ViaProxyName "github-proxy"
+          ConnectPort 443
+          ConnectPort 563
+          ConnectPort 80
+          EOF'
+          
+          # راه‌اندازی Tinyproxy
+          sudo systemctl restart tinyproxy
+          sudo systemctl enable tinyproxy
+          echo "✅ پروکسی HTTP/HTTPS روی پورت 8888 راه‌اندازی شد"
+
+      - name: 🔍 دریافت آی‌پی عمومی
+        id: ip
+        run: |
+          PUBLIC_IP=$(curl -s ifconfig.me)
+          echo "IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "آی‌پی عمومی: $PUBLIC_IP"
+
+      - name: 📱 ارسال اطلاعات پروکسی به تلگرام
+        if: ${{ success() }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # دریافت آی‌پی از مرحله قبل
+          IP="${{ steps.ip.outputs.IP }}"
+          
+          # ساخت پیام
+          MESSAGE="🟢 پروکسی آماده استفاده است:
+          
+          🌐 آی‌پی: \`$IP\`
+          
+          📡 SOCKS5:
+          ➖ آدرس: \`$IP\`
+          ➖ پورت: \`1080\`
+          ➖ بدون رمز عبور
+          
+          🌍 HTTP/HTTPS:
+          ➖ آدرس: \`$IP\`
+          ➖ پورت: \`8888\`
+          
+          ⏳ مدت اعتبار: ${{ github.event.inputs.duration }} دقیقه
+          🕐 زمان شروع: $(date '+%Y-%m-%d %H:%M:%S' -u) UTC
+          
+          ⚠️ این پروکسی موقت است و پس از اتمام زمان، غیرفعال می‌شود."
+          
+          # ارسال به تلگرام
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${MESSAGE}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true"
+
+      - name: ⏳ زنده نگه داشتن پروکسی
+        run: |
+          DURATION_MINUTES="${{ github.event.inputs.duration }}"
+          DURATION_SECONDS=$((DURATION_MINUTES * 60))
+          echo "⏱️ پروکسی برای ${DURATION_MINUTES} دقیقه فعال می‌ماند..."
+          echo "🕐 زمان پایان: $(date -d "+${DURATION_MINUTES} minutes" '+%Y-%m-%d %H:%M:%S' -u) UTC"
+          
+          sleep $DURATION_SECONDS
+          
+          echo "⏹️ زمان اجرا به پایان رسید. پروکسی غیرفعال می‌شود."
