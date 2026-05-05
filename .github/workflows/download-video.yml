@@ -1,10 +1,10 @@
-name: 🎬 Smart Video Downloader
+name: 🧠 Ultra Smart Video Downloader
 
 on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: '🔗 لینک ویدیو (هر سایتی)'
+        description: '🔗 لینک ویدیو از هر سایتی'
         required: true
         type: string
       quality:
@@ -13,11 +13,12 @@ on:
         default: 'best'
         type: choice
         options:
-          - 'best (بهترین)'
+          - 'best (بهترین کیفیت ممکن)'
           - '1080p'
           - '720p'
           - '480p'
           - '360p'
+          - 'audio (فقط صدا)'
 
 permissions:
   contents: write
@@ -28,292 +29,284 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: 📦 نصب ابزارهای ضروری
+      - name: 📦 نصب و آماده‌سازی
         run: |
-          echo "📥 نصب yt-dlp..."
+          # نصب yt-dlp آخرین نسخه
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
           
-          echo "📥 نصب ffmpeg و python..."
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg python3 python3-pip
-          pip3 install requests beautifulsoup4 2>/dev/null || true
+          # نصب ابزارهای ضروری
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg python3 python3-pip
+          pip3 install --quiet requests browser-cookie3 2>/dev/null || true
           
-          yt-dlp --version
-          echo "✅ همه ابزارها آماده هستند"
+          # نمایش نسخه
+          echo "🔧 yt-dlp: $(yt-dlp --version)"
+          echo "🎬 ffmpeg: $(ffmpeg -version 2>&1 | head -1)"
 
-      - name: 🔍 تشخیص هوشمند سایت
-        id: detect
+      - name: 🎯 تنظیم فرمت هوشمند
         run: |
-          URL="${{ github.event.inputs.video_url }}"
-          
-          echo "🔗 لینک: $URL"
-          echo ""
-          echo "🔍 تشخیص سایت..."
-          
-          # تشخیص دامنه
-          DOMAIN=$(echo "$URL" | python3 -c "import sys; from urllib.parse import urlparse; print(urlparse(sys.stdin.read().strip()).netloc.lower())")
-          echo "🌐 دامنه: $DOMAIN"
-          
-          # تشخیص نوع سایت
-          SITE_TYPE="generic"
-          if echo "$DOMAIN" | grep -qE "aparat\.com$"; then
-            SITE_TYPE="aparat"
-          elif echo "$DOMAIN" | grep -qE "namasha\.com$"; then
-            SITE_TYPE="namasha"
-          elif echo "$DOMAIN" | grep -qE "tamasha\.com$"; then
-            SITE_TYPE="tamasha"
-          elif echo "$DOMAIN" | grep -qE "youtube\.com|youtu\.be"; then
-            SITE_TYPE="youtube"
-          elif echo "$DOMAIN" | grep -qE "instagram\.com"; then
-            SITE_TYPE="instagram"
-          elif echo "$DOMAIN" | grep -qE "twitter\.com|x\.com"; then
-            SITE_TYPE="twitter"
-          elif echo "$DOMAIN" | grep -qE "tiktok\.com"; then
-            SITE_TYPE="tiktok"
-          elif echo "$DOMAIN" | grep -qE "vimeo\.com"; then
-            SITE_TYPE="vimeo"
-          elif echo "$DOMAIN" | grep -qE "dailymotion\.com"; then
-            SITE_TYPE="dailymotion"
-          fi
-          
-          echo "🏷️  نوع سایت: $SITE_TYPE"
-          echo "SITE_TYPE=$SITE_TYPE" >> $GITHUB_ENV
-          echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
-
-      - name: ⚙️ تنظیم فرمت
-        run: |
-          FORMAT="best"
           case "${{ github.event.inputs.quality }}" in
-            "1080p") FORMAT="best[height<=1080]" ;;
-            "720p") FORMAT="best[height<=720]" ;;
-            "480p") FORMAT="best[height<=480]" ;;
-            "360p") FORMAT="best[height<=360]" ;;
+            "best (بهترین کیفیت ممکن)")
+              FORMAT_STRING="bv*+ba/b"
+              ;;
+            "1080p")
+              FORMAT_STRING="bv*[height<=1080]+ba/b[height<=1080]"
+              ;;
+            "720p")
+              FORMAT_STRING="bv*[height<=720]+ba/b[height<=720]"
+              ;;
+            "480p")
+              FORMAT_STRING="bv*[height<=480]+ba/b[height<=480]"
+              ;;
+            "360p")
+              FORMAT_STRING="bv*[height<=360]+ba/b[height<=360]"
+              ;;
+            "audio (فقط صدا)")
+              FORMAT_STRING="ba/b"
+              ;;
+            *)
+              FORMAT_STRING="bv*+ba/b"
+              ;;
           esac
-          echo "FORMAT=$FORMAT" >> $GITHUB_ENV
-          echo "✅ فرمت: $FORMAT"
+          
+          echo "FORMAT=$FORMAT_STRING" >> $GITHUB_ENV
+          echo "📊 فرمت: $FORMAT_STRING"
 
-      - name: 📥 دانلود (روش اصلی - yt-dlp)
-        id: main_download
-        continue-on-error: true
+      - name: 🧠 دانلود فوق هوشمند با yt-dlp
+        id: smart_download
         run: |
           mkdir -p /tmp/videos
           
-          # آرگومان‌های پایه
-          BASE_ARGS="--format $FORMAT --output /tmp/videos/%(title)s.%(ext)s --merge-output-format mp4 --no-playlist --retries 15 --fragment-retries 15 --no-check-certificates --force-ipv4 --socket-timeout 60"
+          # فایل کانفیگ موقت برای yt-dlp
+          cat > /tmp/ytdlp.conf << 'ENDCONF'
+          # ============ تنظیمات عمومی ============
+          --output /tmp/videos/%(title).200s.%(ext)s
+          --merge-output-format mp4
+          --no-playlist
+          --no-check-certificates
+          --force-ipv4
+          --socket-timeout 120
+          --retries 20
+          --fragment-retries 20
+          --extractor-retries 15
+          --geo-bypass
+          --no-cache-dir
+          --rm-cache-dir
           
-          # User-Agent های مختلف
-          UA_CHROME="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-          UA_IPHONE="Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+          # ============ User-Agent چرخشی ============
+          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
           
-          # آرگومان‌های اضافی بر اساس سایت
-          case "$SITE_TYPE" in
-            "aparat")
-              EXTRA_ARGS="--user-agent \"$UA_CHROME\" --referer https://www.aparat.com/ --add-header Accept-Language:fa-IR,fa;q=0.9"
-              ;;
-            "youtube")
-              EXTRA_ARGS="--user-agent \"$UA_CHROME\" --extractor-args youtube:player_client=web,ios --geo-bypass"
-              ;;
-            "instagram")
-              EXTRA_ARGS="--user-agent \"$UA_IPHONE\" --add-header Accept-Language:en-US"
-              ;;
-            *)
-              EXTRA_ARGS="--user-agent \"$UA_CHROME\" --geo-bypass"
-              ;;
-          esac
+          # ============ شبیه‌سازی مرورگر ============
+          --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+          --add-header "Accept-Language:en-US,en;q=0.9,fa;q=0.8,ar;q=0.7"
+          --add-header "Accept-Encoding:gzip, deflate, br"
+          --add-header "Cache-Control:max-age=0"
+          --add-header "Sec-Fetch-Dest:document"
+          --add-header "Sec-Fetch-Mode:navigate"
+          --add-header "Sec-Fetch-Site:none"
+          --add-header "Sec-Fetch-User:?1"
+          --add-header "Upgrade-Insecure-Requests:1"
+          --add-header "Connection:keep-alive"
           
-          echo "🚀 اجرای yt-dlp برای $SITE_TYPE..."
-          eval yt-dlp $BASE_ARGS $EXTRA_ARGS "\"${{ github.event.inputs.video_url }}\""
+          # ============ ارجاع‌دهنده جعلی ============
+          --referer "https://www.google.com/"
+          
+          # ============ کاستوم extractor برای همه سایت‌ها ============
+          --extractor-args "generic:variant=web"
+          --extractor-args "youtube:player_client=web,ios,android"
+          --extractor-args "twitter:force_authenticated"
+          ENDCONF
+          
+          echo "🚀 شروع دانلود هوشمند..."
+          
+          # اجرای yt-dlp با کانفیگ کامل
+          yt-dlp \
+            --config-locations /tmp/ytdlp.conf \
+            --format "$FORMAT" \
+            "${{ github.event.inputs.video_url }}" 2>&1 | tee /tmp/download.log
+          
+          echo ""
+          echo "✅ دانلود انجام شد"
+          
+          # نمایش لاگ اگر خطایی بود
+          if grep -q "ERROR" /tmp/download.log 2>/dev/null; then
+            echo ""
+            echo "⚠️ خطاهایی در دانلود وجود داشت:"
+            grep "ERROR\|WARNING\|Unable" /tmp/download.log | tail -20
+          fi
 
-      - name: 📥 دانلود (روش دوم - با هدرهای کامل)
-        id: fallback_download
-        if: steps.main_download.outcome == 'failure'
-        continue-on-error: true
+      - name: 🔄 تلاش مجدد خودکار با تنظیمات جایگزین
+        id: retry_smart
+        if: steps.smart_download.outcome == 'failure'
         run: |
-          echo "⚠️ روش اول ناموفق - تلاش با هدرهای کامل..."
+          echo "⚠️ دانلود اول ناموفق بود - شروع دانلود هوشمند با تنظیمات جایگزین..."
+          
+          # کانفیگ دوم - حالت تهاجمی‌تر
+          cat > /tmp/ytdlp_aggressive.conf << 'ENDCONF'
+          --output /tmp/videos/%(title).200s.%(ext)s
+          --merge-output-format mp4
+          --no-playlist
+          --no-check-certificates
+          --force-ipv4
+          --socket-timeout 180
+          --retries 30
+          --fragment-retries 30
+          --extractor-retries 20
+          --geo-bypass-country US
+          --no-cache-dir
+          --rm-cache-dir
+          --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+          --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          --add-header "Accept-Language:en-US,en;q=0.9"
+          --referer "https://duckduckgo.com/"
+          --extractor-args "generic:variant=mobile"
+          ENDCONF
           
           yt-dlp \
+            --config-locations /tmp/ytdlp_aggressive.conf \
             --format "best[ext=mp4]/best" \
-            --output "/tmp/videos/%(title)s.%(ext)s" \
-            --merge-output-format mp4 \
-            --no-playlist \
-            --retries 20 \
-            --fragment-retries 20 \
-            --no-check-certificates \
-            --force-ipv4 \
-            --socket-timeout 90 \
-            --geo-bypass \
-            --no-cache-dir \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
-            --referer "https://www.google.com/" \
-            --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
-            --add-header "Accept-Language:en-US,en;q=0.9,fa;q=0.8" \
-            --add-header "Cache-Control:max-age=0" \
-            --add-header "Connection:keep-alive" \
-            --add-header "Upgrade-Insecure-Requests:1" \
-            "${{ github.event.inputs.video_url }}"
+            "${{ github.event.inputs.video_url }}" 2>&1 | tee /tmp/download_retry.log
+          
+          if grep -q "ERROR" /tmp/download_retry.log 2>/dev/null; then
+            echo "❌ دانلود دوم هم ناموفق بود"
+          else
+            echo "✅ دانلود دوم موفق بود"
+          fi
 
-      - name: 📥 دانلود (روش سوم - curl مستقیم)
-        id: curl_download
-        if: steps.fallback_download.outcome == 'failure'
-        continue-on-error: true
+      - name: 🚨 دانلود اضطراری با curl مستقیم
+        id: emergency_download
+        if: steps.retry_smart.outcome == 'failure'
         run: |
-          echo "⚠️ yt-dlp کامل ناموفق - تلاش با curl..."
+          echo ""
+          echo "════════════════════════════════════════════════════════"
+          echo "  🚨 شروع دانلود اضطراری - استخراج مستقیم لینک"
+          echo "════════════════════════════════════════════════════════"
+          echo ""
           
           # استخراج لینک مستقیم
-          DIRECT_URL=$(yt-dlp --get-url --format "best[ext=mp4]/best" --no-playlist --force-ipv4 --no-check-certificates "${{ github.event.inputs.video_url }}" 2>/dev/null | head -1)
-          
-          if [ -n "$DIRECT_URL" ]; then
-            echo "🔗 لینک مستقیم پیدا شد"
-            curl -L -o "/tmp/videos/video.mp4" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-              -H "Referer: ${{ github.event.inputs.video_url }}" \
-              -H "Accept: */*" \
-              --retry 15 \
-              --retry-delay 5 \
-              --max-time 1200 \
-              "$DIRECT_URL"
-          else
-            echo "❌ لینک مستقیم پیدا نشد - تلاش با python requests"
+          for i in {1..5}; do
+            echo "🔄 تلاش $i برای استخراج لینک مستقیم..."
             
-            # اسکریپت پایتون برای دانلود
-            python3 << 'PYEOF'
-          import requests
-          import re
-          import os
-          
-          url = "${{ github.event.inputs.video_url }}"
-          
-          headers = {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': '*/*',
-              'Accept-Language': 'en-US,en;q=0.9,fa;q=0.8',
-              'Referer': url
-          }
-          
-          session = requests.Session()
-          session.headers.update(headers)
-          
-          try:
-              resp = session.get(url, timeout=30, allow_redirects=True)
-              print(f"Status: {resp.status_code}")
+            DIRECT_URL=$(yt-dlp \
+              --get-url \
+              --format "best[ext=mp4]/best" \
+              --no-playlist \
+              --no-check-certificates \
+              --force-ipv4 \
+              --geo-bypass \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              --referer "https://www.google.com/" \
+              "${{ github.event.inputs.video_url }}" 2>/dev/null | head -1)
+            
+            if [ -n "$DIRECT_URL" ]; then
+              echo "✅ لینک مستقیم پیدا شد"
+              echo "🔗 ${DIRECT_URL:0:150}..."
               
-              if resp.status_code == 200:
-                  # جستجوی لینک mp4 در صفحه
-                  mp4_links = re.findall(r'["\'](https?://[^"\'\s]+\.mp4[^"\'\s]*)["\']', resp.text)
-                  if mp4_links:
-                      video_url = mp4_links[0]
-                      print(f"✅ لینک mp4: {video_url[:100]}...")
-                      
-                      video_resp = session.get(video_url, stream=True, timeout=300)
-                      with open('/tmp/videos/video.mp4', 'wb') as f:
-                          for chunk in video_resp.iter_content(chunk_size=8192):
-                              f.write(chunk)
-                      print("✅ دانلود با پایتون انجام شد")
-                  else:
-                      print("❌ لینک mp4 در صفحه پیدا نشد")
-              else:
-                  print(f"❌ خطای HTTP: {resp.status_code}")
-          except Exception as e:
-              print(f"❌ خطا: {e}")
-          PYEOF
-          fi
+              # دانلود با curl با قابلیت resume
+              curl -L -C - -o "/tmp/videos/emergency_video.mp4" \
+                --retry 30 \
+                --retry-delay 10 \
+                --retry-max-time 1800 \
+                --max-time 3600 \
+                --connect-timeout 60 \
+                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+                -H "Referer: ${{ github.event.inputs.video_url }}" \
+                -H "Accept: */*" \
+                -H "Accept-Language: en-US,en;q=0.9" \
+                -H "Connection: keep-alive" \
+                --progress-bar \
+                "$DIRECT_URL"
+              
+              if [ -f "/tmp/videos/emergency_video.mp4" ] && [ $(stat -c%s "/tmp/videos/emergency_video.mp4" 2>/dev/null || echo 0) -gt 10000 ]; then
+                echo "✅ دانلود اضطراری موفق"
+                break
+              else
+                echo "⚠️ فایل دانلود شده خیلی کوچک است - تلاش بعدی..."
+                rm -f "/tmp/videos/emergency_video.mp4"
+              fi
+            fi
+            sleep 3
+          done
 
-      - name: 📥 دانلود (روش چهارم - گالری داونلودر)
-        id: gallery_dl
-        if: steps.curl_download.outcome == 'failure'
-        run: |
-          echo "⚠️ تلاش با gallery-dl به عنوان آخرین راه..."
-          
-          pip3 install gallery-dl 2>/dev/null || true
-          
-          gallery-dl \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            --directory /tmp/videos \
-            "${{ github.event.inputs.video_url }}" || {
-            
-            echo "❌ تمام روش‌ها ناموفق بودند"
-            echo ""
-            echo "💡 راهنمایی:"
-            echo "  • اگر سایت ایرانی است، ممکن است نیاز به IP ایران داشته باشد"
-            echo "  • اگر سایت خارجی است، ممکن است گیتهاب تحریم شده باشد"
-            echo "  • می‌توانید کوکی مرورگر خود را export کنید و به yt-dlp بدهید"
-            exit 1
-          }
-
-      - name: 🔍 پیدا کردن فایل
+      - name: 🔍 هوشمند - پیدا کردن فایل دانلود شده
         id: find_file
+        if: always()
         run: |
-          echo "📂 همه فایل‌های دانلود شده:"
-          ls -lhR /tmp/videos/ 2>/dev/null || echo "پوشه خالی است"
-          echo ""
-          echo "📂 فایل‌های ریشه:"
-          ls -lh *.mp4 *.mkv *.webm 2>/dev/null || echo "فایلی در ریشه نیست"
+          echo "📂 جستجوی همه فایل‌های ویدیویی..."
           
-          # پیدا کردن بزرگترین فایل
-          VIDEO_FILE=$(find /tmp/videos . -maxdepth 2 -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.flv" \) -printf "%s %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+          # جستجوی هوشمند در همه جا
+          VIDEO_FILE=$(find /tmp/videos /home /root -type f \( \
+            -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" \
+            -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.flv" \
+            -o -iname "*.wmv" -o -iname "*.m4v" -o -iname "*.3gp" \
+          \) -printf "%s\t%p\n" 2>/dev/null | sort -rn | head -1)
           
-          if [ -z "$VIDEO_FILE" ] || [ ! -f "$VIDEO_FILE" ]; then
-            echo "❌ هیچ فایل ویدیویی یافت نشد!"
+          if [ -z "$VIDEO_FILE" ]; then
+            echo "❌ هیچ فایل ویدیویی در سیستم پیدا نشد!"
+            echo ""
+            echo "محتوای /tmp/videos:"
+            ls -lhR /tmp/videos/ 2>/dev/null || echo "(خالی)"
             exit 1
           fi
           
-          FILE_SIZE=$(du -h "$VIDEO_FILE" | cut -f1)
-          FILE_NAME=$(basename "$VIDEO_FILE")
+          # استخراج اطلاعات
+          FILE_PATH=$(echo "$VIDEO_FILE" | cut -f2)
+          FILE_SIZE_BYTES=$(echo "$VIDEO_FILE" | cut -f1)
+          FILE_SIZE_HUMAN=$(du -h "$FILE_PATH" | cut -f1)
+          FILE_NAME=$(basename "$FILE_PATH")
           
-          echo "VIDEO_PATH=$VIDEO_FILE" >> $GITHUB_ENV
-          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          # بررسی سلامت فایل
+          if [ "$FILE_SIZE_BYTES" -lt 10000 ]; then
+            echo "❌ فایل خیلی کوچک است (${FILE_SIZE_BYTES} بایت) - احتمالاً خراب است"
+            exit 1
+          fi
+          
+          echo "VIDEO_PATH=$FILE_PATH" >> $GITHUB_ENV
+          echo "FILE_SIZE=$FILE_SIZE_HUMAN" >> $GITHUB_ENV
           echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
           
+          # بررسی کدک با ffprobe
+          CODEC=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$FILE_PATH" 2>/dev/null || echo "unknown")
+          DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$FILE_PATH" 2>/dev/null || echo "unknown")
+          RESOLUTION=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$FILE_PATH" 2>/dev/null || echo "unknown")
+          
+          echo "VIDEO_CODEC=$CODEC" >> $GITHUB_ENV
+          echo "VIDEO_DURATION=$DURATION" >> $GITHUB_ENV
+          echo "VIDEO_RESOLUTION=$RESOLUTION" >> $GITHUB_ENV
+          
           echo ""
-          echo "═══════════════════════════════════════"
-          echo "  ✅ فایل پیدا شد:"
-          echo "  📹 $FILE_NAME"
-          echo "  📦 $FILE_SIZE"
-          echo "═══════════════════════════════════════"
+          echo "═══════════════════════════════════════════"
+          echo "  ✅ فایل سالم پیدا شد:"
+          echo "  📹 نام:     $FILE_NAME"
+          echo "  📦 حجم:     $FILE_SIZE_HUMAN"
+          echo "  🎬 کدک:     $CODEC"
+          echo "  ⏱️  مدت:    ${DURATION} ثانیه"
+          echo "  📐 رزولوشن: ${RESOLUTION}"
+          echo "═══════════════════════════════════════════"
 
-      - name: 📤 آپلود به Release (لینک مستقیم دائمی)
+      - name: 📤 آپلود به Release - لینک مستقیم دائمی
+        id: release
+        if: steps.find_file.outcome == 'success'
         uses: ncipollo/release-action@v1
         with:
           artifacts: ${{ env.VIDEO_PATH }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag: "dl-${{ github.run_id }}"
+          tag: "v-${{ github.run_id }}-${{ github.run_attempt }}"
           name: "🎬 ${{ env.FILE_NAME }}"
           body: |
-            ## 📹 فایل دانلود شده
+            ## 📹 اطلاعات فایل دانلود شده
             
             | مشخصه | مقدار |
             |--------|-------|
-            | 📝 نام | ${{ env.FILE_NAME }} |
+            | 📝 نام فایل | `${{ env.FILE_NAME }}` |
             | 📦 حجم | ${{ env.FILE_SIZE }} |
-            | 🏷️  سایت | ${{ env.SITE_TYPE }} |
-            | 📅 تاریخ | $(date '+%Y-%m-%d %H:%M:%S') UTC |
+            | 🎬 کدک | ${{ env.VIDEO_CODEC }} |
+            | ⏱️ مدت | ${{ env.VIDEO_DURATION }} ثانیه |
+            | 📐 رزولوشن | ${{ env.VIDEO_RESOLUTION }} |
+            | 📅 تاریخ دانلود | $(date '+%Y-%m-%d %H:%M:%S') UTC |
             | 🔗 منبع | ${{ github.event.inputs.video_url }} |
             
-            ### 📥 دانلود
-            فایل زیر را کلیک کنید
-          draft: false
-          prerelease: false
-
-      - name: 🔗 ساخت لینک مستقیم
-        run: |
-          REPO="${{ github.repository }}"
-          TAG="dl-${{ github.run_id }}"
-          ENCODED_FILENAME=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${{ env.FILE_NAME }}'))")
-          DIRECT_LINK="https://github.com/${REPO}/releases/download/${TAG}/${ENCODED_FILENAME}"
-          
-          echo ""
-          echo "╔══════════════════════════════════════════════════╗"
-          echo "║          🎉 دانلود با موفقیت انجام شد!           ║"
-          echo "╠══════════════════════════════════════════════════╣"
-          echo "║                                                  ║"
-          echo "║  📹 فایل: ${{ env.FILE_NAME }}"
-          echo "║  📦 حجم:  ${{ env.FILE_SIZE }}"
-          echo "║  🏷️  سایت: ${{ env.SITE_TYPE }}"
-          echo "║                                                  ║"
-          echo "║  🔗 لینک دانلود مستقیم:                         ║"
-          echo "║  $DIRECT_LINK"
-          echo "║                                                  ║"
-          echo "║  📥 این لینک در مرورگر و گوشی قابل باز کردنه    ║"
-          echo "║  📁 در Releases مخزن هم ذخیره شده               ║"
-          echo "║                                                  ║"
-          echo "╚══════════════════════════════════════════════════╝"
+            ---
+            
+            ### 📥 لینک دانلود مستقیم
