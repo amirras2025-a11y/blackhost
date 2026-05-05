@@ -1,194 +1,58 @@
-name: 🎬 Video Downloader (yt-dlp)
 
-on:
-  workflow_dispatch:
-    inputs:
-      video_url:
-        description: '🔗 لینک ویدیو (از یوتیوب، اینستاگرام، توییتر، آپارات و...)'
-        required: true
-        type: string
-      quality:
-        description: '📊 کیفیت دانلود'
-        required: true
-        default: 'best_video'
-        type: choice
-        options:
-          - 'best_video (بهترین ویدیو + بهترین صدا)'
-          - '1080p'
-          - '720p'
-          - '480p'
-          - '360p'
-          - 'worst_video (کمترین کیفیت)'
+> ⚡ روی لینک بالا کلیک کنید یا کپی کنید
+draft: false
+prerelease: false
 
-permissions:
-  contents: write
+- name: 🔗 ساخت لینک مستقیم
+run: |
+# استخراج لینک از Release
+REPO="${{ github.repository }}"
+TAG="video-${{ github.run_id }}"
 
-jobs:
-  download:
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
+# URL-encode نام فایل
+ENCODED_FILENAME=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${{ env.FILE_NAME }}'))")
 
-    steps:
-      - name: 📦 نصب ابزارهای ضروری
-        run: |
-          echo "📥 در حال نصب yt-dlp و ffmpeg..."
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
-          echo "✅ ابزارها آماده هستند"
-          yt-dlp --version
-          ffmpeg -version 2>&1 | head -1
+DIRECT_LINK="https://github.com/${REPO}/releases/download/${TAG}/${ENCODED_FILENAME}"
 
-      - name: 🎯 تنظیم فرمت با توجه به کیفیت انتخابی
-        id: format_selector
-        run: |
-          QUALITY="${{ github.event.inputs.quality }}"
-          echo "کیفیت درخواستی: $QUALITY"
+echo "DIRECT_LINK=$DIRECT_LINK" >> $GITHUB_ENV
 
-          case "$QUALITY" in
-            "best_video (بهترین ویدیو + بهترین صدا)")
-              FORMAT="bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best"
-              MERGE="mp4"
-              ;;
-            "1080p")
-              FORMAT="bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
-              MERGE="mp4"
-              ;;
-            "720p")
-              FORMAT="bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best[height<=720]"
-              MERGE="mp4"
-              ;;
-            "480p")
-              FORMAT="bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best[height<=480]"
-              MERGE="mp4"
-              ;;
-            "360p")
-              FORMAT="bv*[height<=360][ext=mp4]+ba[ext=m4a]/b[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio/best[height<=360]"
-              MERGE="mp4"
-              ;;
-            "worst_video (کمترین کیفیت)")
-              FORMAT="wv*[ext=mp4]+wa[ext=m4a]/w[ext=mp4]/worstvideo+worstaudio/worst"
-              MERGE="mp4"
-              ;;
-            *)
-              FORMAT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-              MERGE="mp4"
-              ;;
-          esac
+echo ""
+echo "══════════════════════════════════════════════════════"
+echo "  🔗 لینک دانلود مستقیم:"
+echo "  $DIRECT_LINK"
+echo "══════════════════════════════════════════════════════"
 
-          echo "FORMAT=$FORMAT" >> $GITHUB_ENV
-          echo "MERGE=$MERGE" >> $GITHUB_ENV
-          echo "✅ فرمت انتخاب شد: $FORMAT"
+- name: 📤 آپلود به Artifact (پشتیبان)
+uses: actions/upload-artifact@v4
+with:
+name: ${{ env.FILE_NAME }}
+path: ${{ env.VIDEO_PATH }}
+retention-days: 90
+compression-level: 0
 
-      - name: 📥 دانلود ویدیو (تلاش اول)
-        id: download
-        continue-on-error: true
-        run: |
-          echo "🎬 شروع دانلود..."
-          echo "🔗 لینک: ${{ github.event.inputs.video_url }}"
-
-          # ساخت پوشه موقت
-          mkdir -p /tmp/videos
-
-          # نام فایل: عنوان اصلی ویدیو + فرمت
-          yt-dlp \
-            --format "$FORMAT" \
-            --output "/tmp/videos/%(title)s.%(ext)s" \
-            --merge-output-format $MERGE \
-            --embed-metadata \
-            --no-playlist \
-            --socket-timeout 60 \
-            --retries 10 \
-            --fragment-retries 10 \
-            --no-check-certificates \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            "${{ github.event.inputs.video_url }}"
-
-          echo "✅ دانلود اولیه کامل شد"
-
-      - name: 📥 دانلود ویدیو (تلاش دوم - ساده)
-        id: download_fallback
-        if: steps.download.outcome == 'failure'
-        run: |
-          echo "⚠️ دانلود اول ناموفق بود. تلاش با تنظیمات ساده‌تر..."
-          
-          mkdir -p /tmp/videos
-          
-          yt-dlp \
-            --format "best[ext=mp4]/bestvideo+bestaudio/best" \
-            --output "/tmp/videos/%(title)s.%(ext)s" \
-            --merge-output-format mp4 \
-            --no-playlist \
-            --socket-timeout 60 \
-            --retries 10 \
-            --fragment-retries 10 \
-            --no-check-certificates \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "${{ github.event.inputs.video_url }}"
-
-          echo "✅ دانلود دوم کامل شد"
-
-      - name: 🔍 پیدا کردن فایل دانلود شده
-        id: find_file
-        run: |
-          echo "📂 فایل‌های موجود در /tmp/videos/:"
-          ls -lh /tmp/videos/
-
-          # پیدا کردن بزرگترین فایل ویدیویی
-          VIDEO_FILE=$(find /tmp/videos -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.flv" \) -printf "%s %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-
-          if [ -z "$VIDEO_FILE" ]; then
-            echo "❌ هیچ فایل ویدیویی در /tmp/videos یافت نشد!"
-            echo ""
-            echo "محتوای پوشه موقت:"
-            ls -la /tmp/videos/
-            echo ""
-            echo "بررسی پوشه اصلی:"
-            ls -la *.mp4 *.mkv *.webm 2>/dev/null || echo "فایلی در ریشه نیست"
-            exit 1
-          fi
-
-          FILE_SIZE=$(du -h "$VIDEO_FILE" | cut -f1)
-          FILE_NAME=$(basename "$VIDEO_FILE")
-
-          echo "VIDEO_PATH=$VIDEO_FILE" >> $GITHUB_ENV
-          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
-          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
-
-          echo ""
-          echo "══════════════════════════════════════════"
-          echo "  ✅ فایل پیدا شد:"
-          echo "  📹 نام:   $FILE_NAME"
-          echo "  📦 حجم:   $FILE_SIZE"
-          echo "  📁 مسیر:  $VIDEO_FILE"
-          echo "══════════════════════════════════════════"
-
-      - name: 📤 آپلود فایل به Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.FILE_NAME }}
-          path: ${{ env.VIDEO_PATH }}
-          retention-days: 7
-          compression-level: 0
-
-      - name: 📊 نمایش نتیجه نهایی
-        run: |
-          echo ""
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║                                                              ║"
-          echo "║              🎉 دانلود با موفقیت انجام شد!                   ║"
-          echo "║                                                              ║"
-          echo "╠══════════════════════════════════════════════════════════════╣"
-          echo "║                                                              ║"
-          echo "║  📹 نام فایل:  ${FILE_NAME}"
-          echo "║  📦 حجم:       ${FILE_SIZE}"
-          echo "║                                                              ║"
-          echo "║  📥 روش دریافت:                                             ║"
-          echo "║     1. به تب Actions بروید                                   ║"
-          echo "║     2. همین اجرا (run) را انتخاب کنید                       ║"
-          echo "║     3. به پایین صفحه بروید (بخش Artifacts)                  ║"
-          echo "║     4. فایل «${FILE_NAME}» را دانلود کنید                   ║"
-          echo "║                                                              ║"
-          echo "║  ⏱️  ماندگاری فایل: ۷ روز                                   ║"
-          echo "║                                                              ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
+- name: ✅ نمایش نتیجه نهایی
+run: |
+echo ""
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║                                                          ║"
+echo "║              🎉 دانلود و آپلود کامل شد!                  ║"
+echo "║                                                          ║"
+echo "╠══════════════════════════════════════════════════════════╣"
+echo "║                                                          ║"
+echo "║  📹 نام فایل: ${FILE_NAME}"
+echo "║  📦 حجم:      ${FILE_SIZE}"
+echo "║                                                          ║"
+echo "║  🔗 لینک دانلود مستقیم (کلیک کنید):                     ║"
+echo "║  ${DIRECT_LINK}"
+echo "║                                                          ║"
+echo "║  📥 روش‌های دانلود:                                     ║"
+echo "║  ۱. کلیک روی لینک بالا                                  ║"
+echo "║  ۲. تب Releases در مخزن                                 ║"
+echo "║  ۳. تب Actions > Artifacts                              ║"
+echo "║                                                          ║"
+echo "║  💡 لینک مستقیم تا زمانی که Release حذف نشه کار میکنه   ║"
+echo "║                                                          ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+echo "📋 برای کپی کردن، لینک زیر هست:"
+echo "${DIRECT_LINK}"
