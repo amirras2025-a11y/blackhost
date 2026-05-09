@@ -1,20 +1,20 @@
-name: Website Image Downloader
+name: Video Thumbnail Downloader
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'Website URL to scrape images from'
+        description: 'Website URL (e.g. a category or search page with video thumbnails)'
         required: true
         type: string
-      max_images:
-        description: 'Maximum number of images to download'
+      max_items:
+        description: 'Maximum number of thumbnails to extract'
         required: false
-        default: 50
+        default: 30
         type: number
 
 jobs:
-  download-images:
+  scrape-thumbnails:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -35,14 +35,15 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y xvfb
 
-    - name: Run image scraper
+    - name: Run thumbnail scraper
       run: |
-        xvfb-run --auto-servernum python scrape_images.py "${{ inputs.url }}" "${{ inputs.max_images }}"
+        xvfb-run --auto-servernum python scrape_images.py "${{ inputs.url }}" "${{ inputs.max_items }}"
 
-    - name: Commit and push images + HTML
+    - name: Commit and push HTML
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add images/ index.html
-        git commit -m "Scraped images from ${{ inputs.url }}" || echo "No changes"
+        # فقط فایل index.html را اضافه کن (پوشه images وجود ندارد)
+        git add index.html
+        git commit -m "Add video thumbnails from ${{ inputs.url }}" || echo "No changes to commit"
         git push
