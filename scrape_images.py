@@ -13,26 +13,14 @@ from playwright.sync_api import sync_playwright
 MIN_IMAGE_WIDTH = 120          # حداقل عرض تصویر (پیکسل)
 MIN_IMAGE_HEIGHT = 90          # حداقل ارتفاع
 IDEAL_RATIO_RANGE = (1.2, 2.2) # نسبت ابعاد ایده‌آل برای تام‌نیل (عرض/ارتفاع)
-# کلمات کلیدی در URL تصویر (به معنی تام‌نیل بودن)
 THUMB_KEYWORDS = ['thumb', 'thumbnail', 'poster', 'cover', 'preview', 'frame', 'still', 'screen', 'vid', 'cap', 'shot']
-# کلمات کلیدی رد شده (به معنی تصویر تصادفی یا لوگو)
 IGNORE_KEYWORDS = ['logo', 'icon', 'avatar', 'button', 'sprite', 'spinner', 'loading', 'ad', 'banner']
-
-def is_video_page_url(url):
-    """تشخیص آدرس صفحه ویدیو (نه صفحه اصلی یا دسته‌بندی)"""
-    patterns = [
-        r'/watch\?v=', r'/video/', r'/v/', r'/embed/', r'/episode/', r'/clip/',
-        r'/play/', r'/media/', r'/show/', r'/program/', r'/vod/', r'/stream/',
-        r'/movie/', r'/series/', r'/tv/'
-    ]
-    url_lower = url.lower()
-    return any(re.search(p, url_lower) for p in patterns)
 
 def get_image_candidates(page, site_url, max_items):
     """
     استخراج نامزدهای تصویر با استفاده از JS در مرورگر.
     برگرداندن لیستی از دیکشنری‌ها با کلیدهای:
-        img_url, container_link, natural_width, natural_height, score
+        imgUrl, pageLink, width, height, ratio, score
     """
     # اسکرول کامل برای لود lazy images
     for _ in range(5):
@@ -41,60 +29,78 @@ def get_image_candidates(page, site_url, max_items):
     page.evaluate("window.scrollTo(0, 0)")
     page.wait_for_timeout(1500)
 
+    # آماده سازی پارامترها برای ارسال به JS
+    params = {
+        "siteOrigin": site_url,
+        "minW": MIN_IMAGE_WIDTH,
+        "minH": MIN_IMAGE_HEIGHT,
+        "ratioMin": IDEAL_RATIO_RANGE[0],
+        "ratioMax": IDEAL_RATIO_RANGE[1],
+        "thumbKw": THUMB_KEYWORDS,
+        "ignoreKw": IGNORE_KEYWORDS,
+        "maxItems": max_items,
+        "videoUrlPatterns": [
+            r'/watch\?v=', r'/video/', r'/v/', r'/embed/', r'/episode/', r'/clip/',
+            r'/play/', r'/media/', r'/show/', r'/program/', r'/vod/', r'/stream/',
+            r'/movie/', r'/series/', r'/tv/'
+        ]
+    }
+
     candidates = page.evaluate("""
-        (siteOrigin, minW, minH, ratioMin, ratioMax, thumbKw, ignoreKw, maxItems) => {
+        (params) => {
+            // helper: check if URL looks like a video page
+            function isVideoPageUrl(url) {
+                if (!url) return false;
+                let lower = url.toLowerCase();
+                return params.videoUrlPatterns.some(pattern => {
+                    let regex = new RegExp(pattern, 'i');
+                    return regex.test(lower);
+                });
+            }
+
             const results = [];
             const allImages = document.querySelectorAll('img');
             
             for (let img of allImages) {
                 let src = img.src;
                 if (!src) {
-                    // try data-src for lazy
                     src = img.getAttribute('data-src') || img.getAttribute('data-original');
                 }
                 if (!src || src.startsWith('data:')) continue;
                 
-                // absolute URL
                 let absoluteImgUrl = new URL(src, window.location.href).href;
-                
-                // ---- رد لوگو و آیکون با کلمات کلیدی ----
                 let urlLower = absoluteImgUrl.toLowerCase();
-                let isIgnored = ignoreKw.some(kw => urlLower.includes(kw));
+                
+                // رد لوگو/آیکون
+                let isIgnored = params.ignoreKw.some(kw => urlLower.includes(kw));
                 if (isIgnored) continue;
                 
-                // ---- ابعاد واقعی تصویر (اگر لود شده باشد) ----
                 let width = img.naturalWidth;
                 let height = img.naturalHeight;
-                if (width === 0 || height === 0) {
-                    // هنوز لود نشده؟ بگذریم (بعداً دوباره چک می‌کنیم)
-                    continue;
-                }
-                if (width < minW || height < minH) continue;
+                if (width === 0 || height === 0) continue; // هنوز لود نشده
+                if (width < params.minW || height < params.minH) continue;
                 
                 let ratio = width / height;
-                if (ratio < ratioMin || ratio > ratioMax) continue;
+                if (ratio < params.ratioMin || ratio > params.ratioMax) continue;
                 
-                // ---- پیدا کردن لینک والد یا مجاور (احتمالی صفحه ویدیو) ----
+                // پیدا کردن لینک والد یا مجاور
                 let linkElem = img.closest('a');
                 let href = linkElem ? linkElem.href : null;
-                if (!href) {
-                    // شاید تصویر خودش لینک باشد؟
-                    let parent = img.parentElement;
-                    if (parent && parent.tagName === 'A') href = parent.href;
+                if (!href && img.parentElement && img.parentElement.tagName === 'A') {
+                    href = img.parentElement.href;
                 }
-                if (href) href = new URL(href, window.location.href).href;
+                if (href) {
+                    href = new URL(href, window.location.href).href;
+                }
                 
-                // ---- امتیازدهی ----
+                // امتیازدهی
                 let score = 0;
-                if (href && is_video_page_url(href)) score += 50;
-                // کلمات کلیدی تام‌نیل در URL تصویر
-                let hasThumbKw = thumbKw.some(kw => urlLower.includes(kw));
+                if (href && isVideoPageUrl(href)) score += 50;
+                let hasThumbKw = params.thumbKw.some(kw => urlLower.includes(kw));
                 if (hasThumbKw) score += 30;
-                // نسبت نزدیک به 16:9 امتیاز بیشتر
                 if (Math.abs(ratio - 16/9) < 0.2) score += 20;
                 else if (Math.abs(ratio - 4/3) < 0.2) score += 15;
-                // هرچه بزرگتر بهتر
-                score += Math.min(20, (width - minW) / 30);
+                score += Math.min(20, (width - params.minW) / 30);
                 
                 results.push({
                     imgUrl: absoluteImgUrl,
@@ -104,16 +110,15 @@ def get_image_candidates(page, site_url, max_items):
                     ratio: ratio,
                     score: score
                 });
-                if (results.length >= maxItems * 2) break; // بیشتر جمع کن بعداً مرتب کن
+                if (results.length >= params.maxItems * 2) break;
             }
-            return results;
+            // مرتب‌سازی بر اساس نمره نزولی
+            results.sort((a,b) => b.score - a.score);
+            return results.slice(0, params.maxItems);
         }
-    """, site_url, MIN_IMAGE_WIDTH, MIN_IMAGE_HEIGHT, IDEAL_RATIO_RANGE[0], IDEAL_RATIO_RANGE[1],
-        THUMB_KEYWORDS, IGNORE_KEYWORDS, max_items)
+    """, params)  # فقط یک آرگومان (params)
 
-    # مرتب‌سازی بر اساس امتیاز
-    candidates.sort(key=lambda x: x['score'], reverse=True)
-    return candidates[:max_items]
+    return candidates
 
 def download_image_as_webp_bytes(page, img_url):
     """دانلود تصویر و تبدیل به WebP bytes"""
@@ -135,7 +140,6 @@ def download_image_as_webp_bytes(page, img_url):
         return None
 
 def generate_html(thumbnails_data, site_url):
-    """تولید HTML با تصاویر base64 و دکمه کپی لینک"""
     rows = []
     for idx, item in enumerate(thumbnails_data):
         img_b64 = base64.b64encode(item['webp_bytes']).decode('utf-8')
