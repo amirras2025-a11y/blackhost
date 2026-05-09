@@ -37,7 +37,7 @@ jobs:
 
     - name: Run thumbnail scraper
       run: |
-        xvfb-run --auto-servernum python scrape_thumbnails.py "${{ inputs.url }}" "${{ inputs.max_items }}"
+        xvfb-run --auto-servernum python scrape_images.py "${{ inputs.url }}" "${{ inputs.max_items }}"
 
     - name: Commit and push HTML
       run: |
