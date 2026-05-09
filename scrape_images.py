@@ -77,7 +77,7 @@ def get_image_candidates(page, site_url, max_items):
                 
                 let width = img.naturalWidth;
                 let height = img.naturalHeight;
-                if (width === 0 || height === 0) continue; // هنوز لود نشده
+                if (width === 0 || height === 0) continue;
                 if (width < params.minW || height < params.minH) continue;
                 
                 let ratio = width / height;
@@ -116,7 +116,7 @@ def get_image_candidates(page, site_url, max_items):
             results.sort((a,b) => b.score - a.score);
             return results.slice(0, params.maxItems);
         }
-    """, params)  # فقط یک آرگومان (params)
+    """, params)
 
     return candidates
 
@@ -140,6 +140,7 @@ def download_image_as_webp_bytes(page, img_url):
         return None
 
 def generate_html(thumbnails_data, site_url):
+    """تولید HTML با تصاویر base64 و دکمه کپی لینک (با پشتیبانی از fallback برای کپی)"""
     rows = []
     for idx, item in enumerate(thumbnails_data):
         img_b64 = base64.b64encode(item['webp_bytes']).decode('utf-8')
@@ -156,6 +157,7 @@ def generate_html(thumbnails_data, site_url):
             </div>
         </div>
         """)
+    
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Video Thumbnails</title><style>
@@ -169,21 +171,85 @@ h1 {{ color: #f66; text-align: center; }}
 .link a {{ color: #8af; word-break: break-all; flex:1; }}
 .copy-btn {{ background: #333; border: none; color: white; padding: 5px 12px; border-radius: 20px; cursor: pointer; }}
 .copy-btn:hover {{ background: #555; }}
+.toast {{ position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #4caf50; color: white; padding: 8px 16px; border-radius: 20px; z-index: 1000; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }}
 footer {{ text-align: center; margin-top: 30px; opacity: 0.6; }}
 </style></head>
 <body>
 <h1>🎬 Video Thumbnails from <a href="{site_url}" target="_blank">{site_url}</a></h1>
 <div class="gallery">{''.join(rows)}</div>
 <footer>Total: {len(thumbnails_data)} | Click Copy for video page URL</footer>
+
+<div id="toast" class="toast">✅ Copied!</div>
+
 <script>
-document.querySelectorAll('.copy-btn').forEach(btn => {{
-    btn.onclick = () => {{
-        navigator.clipboard.writeText(btn.getAttribute('data-link'));
-        let old = btn.innerText;
-        btn.innerText = '✅ Copied!';
-        setTimeout(() => btn.innerText = old, 1500);
-    }};
-}});
+(function() {{
+    // نمایش پیام موقت
+    function showMessage(msg, isError = false) {{
+        let toast = document.getElementById('toast');
+        toast.textContent = msg || (isError ? '❌ Copy failed' : '✅ Copied!');
+        toast.style.backgroundColor = isError ? '#f44336' : '#4caf50';
+        toast.style.opacity = '1';
+        setTimeout(() => {{
+            toast.style.opacity = '0';
+        }}, 1500);
+    }}
+
+    // کپی متن با fallback برای مرورگرهای بدون مجوز
+    async function copyText(text, btnElement) {{
+        try {{
+            // روش مدرن با Clipboard API
+            await navigator.clipboard.writeText(text);
+            showMessage('✅ Copied!');
+            if (btnElement) {{
+                let old = btnElement.innerText;
+                btnElement.innerText = '✅ Copied!';
+                setTimeout(() => btnElement.innerText = old, 1500);
+            }}
+        }} catch (err) {{
+            console.warn('Clipboard API failed:', err);
+            // Fallback: ایجاد input مخفی و کپی دستی
+            try {{
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.top = '-9999px';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                textarea.setSelectionRange(0, text.length);
+                const success = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                if (success) {{
+                    showMessage('✅ Copied!');
+                    if (btnElement) {{
+                        let old = btnElement.innerText;
+                        btnElement.innerText = '✅ Copied!';
+                        setTimeout(() => btnElement.innerText = old, 1500);
+                    }}
+                }} else {{
+                    showMessage('❌ Manual copy: ' + text, true);
+                }}
+            }} catch (fallbackErr) {{
+                console.error('Fallback copy failed:', fallbackErr);
+                showMessage('❌ Copy failed. Select URL manually.', true);
+                alert('Copy failed. Please select and copy the URL manually:\\n' + text);
+            }}
+        }}
+    }}
+
+    // نصب event handler روی همه دکمه‌ها
+    document.querySelectorAll('.copy-btn').forEach(btn => {{
+        btn.addEventListener('click', (e) => {{
+            e.preventDefault();
+            const link = btn.getAttribute('data-link');
+            if (link && link !== '#') {{
+                copyText(link, btn);
+            }} else {{
+                showMessage('❌ No valid link', true);
+            }}
+        }});
+    }});
+}})();
 </script>
 </body>
 </html>"""
@@ -203,6 +269,8 @@ def main():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (Chrome/120)"
         )
         page = context.new_page()
+        
+        print(f"🌐 Loading {site_url} ...")
         page.goto(site_url, wait_until="networkidle")
         page.wait_for_timeout(2000)
 
@@ -233,6 +301,7 @@ def main():
             print(f"✅ Success! {len(final)} thumbnails embedded in index.html")
         else:
             print("❌ Failed to download any images.")
+        
         browser.close()
 
 if __name__ == "__main__":
