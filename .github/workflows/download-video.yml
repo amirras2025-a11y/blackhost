@@ -10,13 +10,14 @@ on:
       quality:
         description: 'Video Quality'
         required: true
-        default: 'best'
+        default: 'lowest'
         type: choice
         options:
         - best
         - 1080p
         - 720p
         - 480p
+        - lowest
         - audio
 
 jobs:
