@@ -1,62 +1,48 @@
-name: Advanced Image Extractor (Playwright)
+name: Website Image Downloader
 
 on:
   workflow_dispatch:
     inputs:
-      page_url:
-        description: 'Website URL to extract images from'
+      url:
+        description: 'Website URL to scrape images from'
         required: true
         type: string
-        default: 'https://example.com'
-      wait_time:
-        description: 'Wait time for page load (seconds)'
+      max_images:
+        description: 'Maximum number of images to download'
         required: false
+        default: 50
         type: number
-        default: 3
-      scroll:
-        description: 'Auto scroll to load lazy images (true/false)'
-        required: false
-        type: boolean
-        default: true
-
-permissions:
-  contents: write
 
 jobs:
-  extract-images:
+  download-images:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    
-    - name: Install Playwright
+        python-version: '3.11'
+
+    - name: Install dependencies
       run: |
-        npm init -y
-        npm install playwright
-        npx playwright install chromium
-    
-    - name: Create output directory
-      run: mkdir -p output
-    
-    - name: Extract images with Playwright
-      env:
-        PAGE_URL: ${{ github.event.inputs.page_url }}
-        WAIT_TIME: ${{ github.event.inputs.wait_time }}
-        ENABLE_SCROLL: ${{ github.event.inputs.scroll }}
-      run: node scripts/extract-images-advanced.js
-    
-    - name: Commit and push results
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "Extracted images from ${{ github.event.inputs.page_url }}"
-        commit_user_name: "github-actions[bot]"
-        commit_user_email: "github-actions[bot]@users.noreply.github.com"
-        file_pattern: "output/*"
+        pip install playwright pillow
+        playwright install chromium
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+
+    - name: Run image scraper
+      run: |
+        xvfb-run --auto-servernum python scrape_images.py "${{ inputs.url }}" "${{ inputs.max_images }}"
+
+    - name: Commit and push images + HTML
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add images/ index.html
+        git commit -m "Scraped images from ${{ inputs.url }}" || echo "No changes"
+        git push
