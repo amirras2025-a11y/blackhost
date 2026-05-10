@@ -1,64 +1,60 @@
-name: Google Image Scraper
+name: جستجوی تصاویر با موتورهای مختلف
 
 on:
   workflow_dispatch:
     inputs:
       query:
-        description: 'Search query'
+        description: '🔍 عبارت جستجو (مثال: sunset, cat, mountain)'
         required: true
         type: string
+        default: 'landscape'
       limit:
-        description: 'Number of images (max 100)'
+        description: '📸 حداکثر تعداد تصاویر (حداکثر ۱۰۰)'
         required: false
-        default: '30'
+        type: number
+        default: 30
+      engines:
+        description: '⚙️ موتورهای جستجو (با کاما جدا کنید) | گزینه‌های مجاز: google, bing, ddg, yandex'
+        required: false
         type: string
-      safe:
-        description: 'Safe search (true = filter, false = all)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+        default: 'bing,ddg'
 
 jobs:
-  scrape:
+  search-and-generate:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: 📥 دریافت کد مخزن
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: 🟢 نصب Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: 📦 نصب کتابخانه‌های مورد نیاز
         run: |
           npm init -y
-          npm install google-images-scraper
+          npm install imgsearch-api playwright
 
-      - name: Install system dependencies for Puppeteer
+      - name: 🔧 نصب وابستگی‌های سیستمی مرورگر (Puppeteer/Playwright)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev \
-            libgbm-dev libasound-dev libxshmfence1
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev libxshmfence1
 
-      - name: Run image scraper
+      - name: 🕷️ اجرای اسکریپت جستجو
         env:
           SEARCH_QUERY: ${{ inputs.query }}
-          IMAGE_LIMIT: ${{ inputs.limit }}
-          SAFE_MODE: ${{ inputs.safe }}
-        run: node scraper.js
+          SEARCH_LIMIT: ${{ inputs.limit }}
+          SEARCH_ENGINES: ${{ inputs.engines }}
+        run: node search.js
 
-      - name: Commit and push HTML gallery
+      - name: 📤 ذخیره فایل HTML در مخزن
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes to commit"
+          git add index.html || true
+          git commit -m "گالری تصاویر: ${{ inputs.query }}" || echo "تغییری وجود ندارد"
           git push
