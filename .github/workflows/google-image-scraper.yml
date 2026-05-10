@@ -9,7 +9,7 @@ on:
         type: string
         default: 'landscape'
       limit:
-        description: '📸 حداکثر تعداد تصاویر (حداکثر ۱۰۰)'
+        description: '📸 حداکثر تعداد تصاویر (حداکثر ۲۰۰)'
         required: false
         type: number
         default: 30
@@ -37,7 +37,7 @@ jobs:
       - name: 📦 نصب کتابخانه‌های مورد نیاز
         run: |
           npm init -y
-          npm install imgsearch-api playwright
+          npm install imgsearch-api playwright axios
 
       - name: 🔧 نصب وابستگی‌های سیستمی مرورگر (Puppeteer/Playwright)
         run: |
@@ -54,7 +54,7 @@ jobs:
       - name: 📤 ذخیره فایل HTML در مخزن
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config.user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html || true
           git commit -m "گالری تصاویر: ${{ inputs.query }}" || echo "تغییری وجود ندارد"
           git push
