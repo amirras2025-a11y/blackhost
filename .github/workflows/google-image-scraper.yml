@@ -1,4 +1,4 @@
-name: Google-Image-Scraper
+name: Google Image Scraper
 
 on:
   workflow_dispatch:
@@ -12,6 +12,14 @@ on:
         required: false
         default: '30'
         type: string
+      safe:
+        description: 'Safe search (true = filter, false = all)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   scrape:
@@ -23,22 +31,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
+          node-version: '20'
 
       - name: Install dependencies
         run: |
-          pip install icrawler
+          npm init -y
+          npm install google-images-scraper
 
-      - name: Run scraper
+      - name: Install system dependencies for Puppeteer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev \
+            libgbm-dev libasound-dev libxshmfence1
+
+      - name: Run image scraper
         env:
           SEARCH_QUERY: ${{ inputs.query }}
           IMAGE_LIMIT: ${{ inputs.limit }}
-        run: python scraper.py
+          SAFE_MODE: ${{ inputs.safe }}
+        run: node scraper.js
 
-      - name: Commit and push HTML
+      - name: Commit and push HTML gallery
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
