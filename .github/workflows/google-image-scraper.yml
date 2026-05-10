@@ -4,25 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       query:
-        description: 'Enter search keywords'  
+        description: 'Search query (e.g., "cats", "mountain landscape")'
         required: true
         type: string
       limit:
-        description: 'Number of images (max 100)' 
+        description: 'Maximum number of images (max 100)'
         required: false
         default: '30'
         type: string
-      unsafe:
-        description: 'Allow sensitive content? (true/false)' 
+      safe:
+        description: 'Safe search filter (true = blurred/filtered, false = all results)'
         required: false
-        default: 'false'
+        default: 'true'
         type: choice
         options:
-          - 'false'
           - 'true'
+          - 'false'
 
 jobs:
-  scrape-images:
+  scrape:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -38,21 +38,32 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install google-imgs axios
+          npm init -y
+          npm install scrape-google-images
+
+      - name: Install system dependencies for Puppeteer
+        run: |
           sudo apt-get update
-          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev
+          sudo apt-get install -y \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libdrm-dev \
+            libxkbcommon-dev \
+            libgbm-dev \
+            libasound-dev \
+            libxshmfence1
 
       - name: Run image scraper
-        run: node scraper.js
         env:
           SEARCH_QUERY: ${{ inputs.query }}
           IMAGE_LIMIT: ${{ inputs.limit }}
-          UNSAFE_MODE: ${{ inputs.unsafe }}
+          SAFE_MODE: ${{ inputs.safe }}
+        run: node scraper.js
 
-      - name: Commit and push HTML
+      - name: Commit and push HTML gallery
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes"
+          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes to commit"
           git push
