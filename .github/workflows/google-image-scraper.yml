@@ -1,0 +1,58 @@
+name: Google Image Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'Enter search keywords'  
+        required: true
+        type: string
+      limit:
+        description: 'Number of images (max 100)' 
+        required: false
+        default: '30'
+        type: string
+      unsafe:
+        description: 'Allow sensitive content? (true/false)' 
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  scrape-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          npm install google-imgs axios
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev
+
+      - name: Run image scraper
+        run: node scraper.js
+        env:
+          SEARCH_QUERY: ${{ inputs.query }}
+          IMAGE_LIMIT: ${{ inputs.limit }}
+          UNSAFE_MODE: ${{ inputs.unsafe }}
+
+      - name: Commit and push HTML
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes"
+          git push
