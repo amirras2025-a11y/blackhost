@@ -1,4 +1,4 @@
-const { scrapeImages } = require('scrape-google-images');
+const { GoogleImagesScraper } = require('google-images-scraper');
 const fs = require('fs');
 
 async function main() {
@@ -7,7 +7,7 @@ async function main() {
   const safeMode = process.env.SAFE_MODE === 'true';
 
   if (!query) {
-    console.error('SEARCH_QUERY environment variable is required');
+    console.error('SEARCH_QUERY is required');
     process.exit(1);
   }
   if (isNaN(limit) || limit < 1) limit = 30;
@@ -15,26 +15,33 @@ async function main() {
 
   console.log(`🔍 Searching Google Images for "${query}" (limit: ${limit}, safe: ${safeMode})`);
 
+  const scraper = new GoogleImagesScraper({
+    query: query,
+    limit: limit,
+    safe: safeMode,   // true = safe search on
+    puppeteerOptions: {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
+  });
+
   try {
-    const images = await scrapeImages(query, {
-      limit: limit,
-      safe: safeMode   // true = فیلتر ایمن فعال (بدون محتوای حساس)
-    });
+    const images = await scraper.scrape();
 
     if (!images || images.length === 0) {
-      console.warn('No images found.');
-      fs.writeFileSync('index.html', `<html><body><p>No results for "${query}".</p></body></html>`);
+      console.warn('❌ No images found.');
+      fs.writeFileSync('index.html', `<html><body><h1>No images found for "${query}".</h1></body></html>`);
       return;
     }
 
     console.log(`✅ Retrieved ${images.length} images. Generating HTML...`);
 
-    // ساخت HTML با نمایش تصاویر و لینک منبع
+    // ساخت کارت‌های HTML
     let cards = '';
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
-      const imgUrl = img.url;
-      const sourceUrl = img.source || img.url;  // لینک صفحه مبدأ (معمولاً در .source وجود دارد)
+      const imgUrl = img.url || '';
+      const sourceUrl = img.source || img.url || '#';
       cards += `
       <div class="card">
         <div class="img-wrapper">
