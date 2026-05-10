@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       query:
-        description: 'Search query (e.g., "cats", "mountain landscape")'
+        description: 'Search query'
         required: true
         type: string
       limit:
-        description: 'Maximum number of images (max 100)'
+        description: 'Number of images (max 100)'
         required: false
         default: '30'
         type: string
       safe:
-        description: 'Safe search filter (true = blurred/filtered, false = all results)'
+        description: 'Safe search filter (false for all results)'
         required: false
         default: 'true'
         type: choice
@@ -31,39 +31,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js (for alternative package)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests beautifulsoup4 lxml
+
+      - name: Install Node.js alternative (optional)
         run: |
           npm init -y
           npm install scrape-google-images
-
-      - name: Install system dependencies for Puppeteer
-        run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libnss3 \
-            libatk-bridge2.0-0 \
-            libdrm-dev \
-            libxkbcommon-dev \
-            libgbm-dev \
-            libasound-dev \
-            libxshmfence1
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev
 
-      - name: Run image scraper
+      - name: Run image scraper (Python version)
         env:
           SEARCH_QUERY: ${{ inputs.query }}
           IMAGE_LIMIT: ${{ inputs.limit }}
           SAFE_MODE: ${{ inputs.safe }}
-        run: node scraper.js
+        run: python google_image_scraper.py
 
       - name: Commit and push HTML gallery
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes to commit"
+          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes"
           git push
