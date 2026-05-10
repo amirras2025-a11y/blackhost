@@ -1,4 +1,4 @@
-name: Google Image Scraper
+name: Google-Image-Scraper
 
 on:
   workflow_dispatch:
@@ -12,14 +12,6 @@ on:
         required: false
         default: '30'
         type: string
-      safe:
-        description: 'Safe search filter (false for all results)'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 jobs:
   scrape:
@@ -31,38 +23,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (for alternative package)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 lxml
+          pip install icrawler
 
-      - name: Install Node.js alternative (optional)
-        run: |
-          npm init -y
-          npm install scrape-google-images
-          sudo apt-get update
-          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev
-
-      - name: Run image scraper (Python version)
+      - name: Run scraper
         env:
           SEARCH_QUERY: ${{ inputs.query }}
           IMAGE_LIMIT: ${{ inputs.limit }}
-          SAFE_MODE: ${{ inputs.safe }}
-        run: python google_image_scraper.py
+        run: python scraper.py
 
-      - name: Commit and push HTML gallery
+      - name: Commit and push HTML
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes"
+          git commit -m "Add image gallery for: ${{ inputs.query }}" || echo "No changes to commit"
           git push
