@@ -12,13 +12,13 @@ if (!query) {
   process.exit(1);
 }
 if (isNaN(limit) || limit < 1) limit = 30;
-limit = Math.min(limit, 100); //  تصاویر رو محدود به ۱۰۰ می‌کنیم تا از محدودیت منابع عبور نکنیم.
+limit = Math.min(limit, 200);
 
 console.log(`🔍 جستجوی عبارت: "${query}"`);
 console.log(`⚙️ موتورهای انتخاب شده: ${engines.join(', ')}`);
 console.log(`📸 حداکثر تصاویر: ${limit}`);
 
-//  دریافت URL تصاویر با استفاده از چند مرحله فراخوانی
+// دریافت URL تصاویر با استفاده از چند مرحله فراخوانی
 async function fetchImageUrls() {
   let allUrls = [];
   const batchLimit = 30;
@@ -35,7 +35,7 @@ async function fetchImageUrls() {
         n: batch
       });
       allUrls.push(...urls);
-      if (urls.length < batch) break; // اگر موتور جستجو نتایج کمتری برگرداند، حلقه رو متوقف می‌کنیم.
+      if (urls.length < batch) break;
     } catch (err) {
       console.error(`خطا در مرحله ${i + 1}:`, err.message);
       break;
@@ -90,6 +90,12 @@ async function downloadAndEncodeImage(imgUrl, index) {
 (async () => {
   console.log("🚀 شروع فرآیند جستجو و دانلود تصاویر...");
 
+  // حذف فایل قبلی اگر وجود دارد
+  if (fs.existsSync('index.html')) {
+    fs.unlinkSync('index.html');
+    console.log('📝 فایل قبلی index.html حذف شد.');
+  }
+
   const imageUrls = await fetchImageUrls();
 
   if (!imageUrls.length) {
@@ -131,6 +137,8 @@ async function downloadAndEncodeImage(imgUrl, index) {
     `;
   }
 
+  const currentDate = new Date().toLocaleString('fa-IR');
+
   const html = `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -154,6 +162,7 @@ async function downloadAndEncodeImage(imgUrl, index) {
     .copy-btn { background: #e9ecef; border: none; padding: 0.3rem 0.9rem; border-radius: 30px; cursor: pointer; font-size: 0.7rem; font-weight: 500; transition: 0.2s; flex-shrink: 0; color: #1e4668; }
     .copy-btn:hover { background: #cdd4dc; }
     footer { text-align: center; margin-top: 2.5rem; font-size: 0.75rem; color: #5a6e7c; border-top: 1px solid #dce5ef; padding-top: 1.2rem; }
+    .update-time { text-align: center; margin-top: 1rem; font-size: 0.7rem; color: #7f8c8d; }
   </style>
 </head>
 <body>
@@ -162,6 +171,7 @@ async function downloadAndEncodeImage(imgUrl, index) {
   <div class="sub">🔍 جستجو: "${escapeHtml(query)}" &nbsp;|&nbsp; 📸 تعداد: ${downloadedImages.length}</div>
   <div class="gallery">${cards}</div>
   <footer>تصاویر به صورت Base64 درون فایل HTML ذخیره شده‌اند. لینک مستقیم تصاویر نیز قابل مشاهده است.</footer>
+  <div class="update-time">🕒 آخرین بروزرسانی: ${currentDate}</div>
 </div>
 <script>
   document.querySelectorAll('.copy-btn').forEach(btn => {
